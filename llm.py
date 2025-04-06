@@ -1,12 +1,13 @@
+import os
 from time import sleep
 from log import Logger
+from dotenv import load_dotenv
 from langchain_ollama import ChatOllama
 from typing import Literal, Generator, Union
 
+load_dotenv()
 llm = ChatOllama(model="gemma3:1b")
-
 logger = Logger(name="LLM", log_to_console=True)
-logger.log("LLM initialized.", level='info')
 
 # Lesson learned: Never use return and yield in the same function.
 # Python will always return generators !
@@ -32,7 +33,7 @@ def get_response_stream(prompt: str = "Hello!", dummy: bool = False) -> Generato
         logger.log(f"Type: Dummy, Stream: True", level='info')
         for i in range(0, len(dummy_resp), 3):
             yield dummy_resp[i:i + 3]
-            sleep(0.05)
+            sleep(1 / int(os.environ.get("tokens_per_sec", 3)))
     else:
         logger.log(f"Type: LLM, Stream: True", level='info')
         for chunk in llm.stream(prompt):

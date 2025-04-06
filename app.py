@@ -3,12 +3,11 @@ import streamlit as st
 import os
 import time
 import shutil
-import random
-import string
 from typing import Optional, List, Literal
 
 from log import Logger
 from llm import get_response, get_response_stream
+from files import check_create_uploads_folder, delete_old_files, save_file, get_pdf_iframe
 
 # ------------------------------------------------------------------------------
 # Page Config:
@@ -41,43 +40,13 @@ class Message:
 
 
 if "initialized" not in st.session_state:
-    # Check uploads folder:
-    uploads_path = f"uploads"
-    if not os.path.exists(uploads_path):
-        os.makedirs(uploads_path)
+    st.session_state.uploads_path = check_create_uploads_folder()
+    # delete_old_files(time_in_hours=24)
 
     # Initialize Logger:
     st.session_state.logger = Logger(name="Streamlit")
     logger = st.session_state.logger
-
-    # Assign session id:
-    def generate_random(length=10):
-        characters = string.ascii_letters + string.digits
-        return ''.join(random.choice(characters) for _ in range(length))
-
-    session_id = generate_random()
-    while session_id in os.listdir("./uploads"):
-        session_id = generate_random()
-    logger.log(f"New Session ID: {session_id}", level='info')
-
-    # Create session folder:
-    os.makedirs(name=f"uploads/{session_id}")
-    st.session_state.session_id = session_id
-    st.session_state.user_uploads = f"{uploads_path}/{st.session_state.session_id}"
-
-    # Delete old folders: (< 1 day old)
-    current_time = time.time()
-    num_days = 1
-    cutoff_time = current_time - (num_days * 24 * 60 * 60)
-
-    for folder_name in os.listdir(uploads_path):
-        folder_path = os.path.join(uploads_path, folder_name)
-        if os.path.isdir(folder_path):
-            folder_creation_time = os.path.getctime(folder_path)
-
-            if folder_creation_time < cutoff_time:
-                shutil.rmtree(folder_path)
-                logger.log(f"Deleted folder: {folder_name}", level='warning')
+    logger.log("Streamlit initialized.", level='info')
 
     # Initialize messages:
     st.session_state.chat_history = [
@@ -85,13 +54,16 @@ if "initialized" not in st.session_state:
         # Message("human", "Help me in some thing...")
     ]
 
+    # User uploads:
+    st.session_state.user_uploads = []
+
     # Set flag to true:
     st.session_state.initialized = True
 
 
 # All variables in session state:
-session_id, user_uploads, logger, chat_history, initialized = (
-    st.session_state.session_id,
+uploads_path, user_uploads, logger, chat_history, initialized = (
+    st.session_state.uploads_path,
     st.session_state.user_uploads,
     st.session_state.logger,
     st.session_state.chat_history,
@@ -117,29 +89,91 @@ def write_as_human(text: str, filenames: Optional[List[str]] = None):
             st.caption(f"🔗 Attached file(s): {files}.")
 
 
+def handle_uploaded_files(uploaded_files) -> bool:
+    progress_status = ""
+
+    with st.chat_message(name='assistant', avatar='./assets/settings_3.png'):
+        with st.spinner("Processing files..."):
+            container = st.empty()
+
+            def write_progress(msg, in_progress=False):
+                nonlocal progress_status
+                if in_progress:
+                    curr = progress_status + f"- ⏳ {msg}"
+                else:
+                    progress_status += f"- ✅ {msg}\n"
+                    curr = progress_status
+
+                container.container(border=True).markdown(curr)
+
+            try:
+                for i, file in enumerate(uploaded_files):
+                    progress_status += f"\n📂 Processing file {i+1} of {len(uploaded_files)}...\n"
+
+                    # Save the uploaded file to the uploads folder:
+                    write_progress("Saving file...", True)
+                    status, file_name = save_file(file.name, file.getvalue())
+                    time.sleep(st.secrets.llm.per_step_delay)
+                    write_progress(f"File `{file_name}` saved successfully.")
+
+                    # Embed the file:
+                    write_progress("Embedding file...", True)
+                    time.sleep(st.secrets.llm.per_step_delay)
+                    write_progress("Generated embeddings successfully...")
+
+                    # Add file in session_state:
+                    st.session_state.user_uploads.append(file_name)
+                    time.sleep(st.secrets.llm.end_delay)
+
+                    # Done:
+                    time.sleep(st.secrets.llm.end_delay)
+                    logger.log(
+                        f"File `{file_name}` processed successfully.", level='info')
+
+                return True
+
+            except Exception as e:
+                logger.log(f"Error processing files: {e}", level='error')
+                return False
+
+
+# ------------------------------------------------------------------------------
+# Sidebar:
+# ------------------------------------------------------------------------------
+
+
+st.sidebar.subheader("📂 Files")
+
+selected_file = st.sidebar.selectbox(
+    label="Choose File to ***Preview***",
+    index=0,
+    options=st.session_state.user_uploads,
+)
+
+if selected_file:
+    file = os.path.join(uploads_path, selected_file)
+    status, content = get_pdf_iframe(file)
+
+    if status:
+        st.sidebar.markdown(content, unsafe_allow_html=True)
+    else:
+        st.sidebar.error(content, icon="😕")
+
+
 # ------------------------------------------------------------------------------
 # Page content:
 # ------------------------------------------------------------------------------
 
-# selectbox to choose one among all the uploaded files
-# preview of all the uploaded files
-# st.sidebar
-
-
-a, b = st.columns([0.5, 9.5], vertical_alignment='bottom', gap='small')
-a.image("./assets/gemma.jpg")
+a, b = st.columns([0.65, 9.35], vertical_alignment='bottom', gap='small')
+a.image("./assets/gemma.jpg", use_container_width=True)
 b.header(":green[RAG] with :blue[Gemma-3]", divider='rainbow')
 
-# if "first" not in st.session_state:
-# st.session_state['first'] = True
 for message in st.session_state.chat_history:
     if message.type == 'human':
         write_as_human(message.content, message.filenames)
 
     elif message.type == 'assistant':
         write_as_ai(message.content)
-
-    # st.json(message.__dict__)
 
 
 if user_message := st.chat_input(
@@ -157,23 +191,28 @@ if user_message := st.chat_input(
             file.name for file in user_message.files] if user_message.files else None
     )
 
-    # Save and write it to the chat:
+    # Save it to the chat:
     st.session_state.chat_history.append(new_message)
+    # For now, write it on screen:
     write_as_human(new_message.content, new_message.filenames)
+
+    # Handle the files if any:
+    if user_message.files:
+        if handle_uploaded_files(user_message.files):
+            st.toast("Files processed successfully!", icon="✅")
+        else:
+            st.error("Error processing files. Please try again.", icon="🚫")
 
     # Get response and write it:
     full = ""
-
     with st.chat_message(name='assistant', avatar='assistant'):
         with st.spinner("Generating response..."):
             container = st.empty()
 
-            resp = get_response_stream(new_message.content, dummy=False)
+            resp = get_response_stream(new_message.content, dummy=True)
             for chunk in resp:
                 full += chunk
                 container.container(border=True).markdown(full + "|")
 
     st.session_state.chat_history.append(Message("assistant", full))
     st.rerun()
-
-    
