@@ -4,47 +4,53 @@ from typing import Literal
 # Logs priority levels:
 # CRITICAL > ERROR > WARNING > INFO > DEBUG > NOTSET
 
+_loggers = {}
+
+def get_logger(name: str = "Streamlit", **kwargs):
+    if name not in _loggers:
+        _loggers[name] = Logger(name=name, **kwargs)
+    return _loggers[name]
 
 class Logger:
     def __init__(self, name: str, log_file: str = "app.log", log_to_console: bool = False, log_to_file: bool = True):
-        self.logger = logging.getLogger(name)
-        self.logger.setLevel(logging.DEBUG)
-        self.log_to_console = log_to_console
-        self.log_to_file = log_to_file
+        if name in _loggers:
+            self.logger = _loggers[name].logger
+            
+        else:
+            self.logger = logging.getLogger(name)
+            self.logger.setLevel(logging.DEBUG)
+            self.log_to_console = log_to_console
+            self.log_to_file = log_to_file
 
-        # Create handler for file
-        # only messages with level >= DEBUG will be logged
-        self.file_handler = logging.FileHandler(log_file)
-        self.file_handler.setLevel(logging.DEBUG)
+            # # Avoid adding handlers multiple times
+            # if not self.logger.handlers:
+            # File Handler
+            if self.log_to_file:
+                file_handler = logging.FileHandler(log_file)
+                file_handler.setLevel(logging.DEBUG)
+                formatter = logging.Formatter(
+                    '%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s',
+                    datefmt='%d-%m-%y %H:%M:%S'
+                )
+                file_handler.setFormatter(formatter)
+                self.logger.addHandler(file_handler)
 
-        # Set the logging level for console handler
-        # to INFO so that only messages with level >= INFO will be logged
-        self.console_handler = logging.StreamHandler()
-        self.console_handler.setLevel(logging.INFO)
+            # Console Handler
+            if self.log_to_console:
+                console_handler = logging.StreamHandler()
+                console_handler.setLevel(logging.INFO)
+                formatter = logging.Formatter(
+                    '%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s',
+                    datefmt='%d-%m-%y %H:%M:%S'
+                )
+                console_handler.setFormatter(formatter)
+                self.logger.addHandler(console_handler)
 
-        # Create formatters and add it to handlers
-        formatter = logging.Formatter(
-            '%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s',
-            datefmt='%d-%m-%y %H:%M:%S'
-        )
-
-        self.file_handler.setFormatter(formatter)
-        self.console_handler.setFormatter(formatter)
-
-        # Add handlers to the logger
-        if self.log_to_file:
-            self.logger.addHandler(self.file_handler)
-
-        if self.log_to_console:
-            self.logger.addHandler(self.console_handler)
-
-        self.logger.propagate = False
-
-        # self.logger.info("Logger initialized.")
-        # self.logger.debug("Logger initialized in debug mode.")
-        # self.logger.warning("Logger initialized in warning mode.")
-        # self.logger.error("Logger initialized in error mode.")
-        # self.logger.critical("Logger initialized in critical mode.")
+            self.logger.propagate = False
+            _loggers[name] = self
+            
+            self.logger.info(
+                f"Logger initialized for {name}. [File:{'Yes' if log_to_file else 'No'}, Console:{'Yes' if log_to_console else 'No'}]")
 
     # Function to log messages:
     def log(self, message: str, level: Literal['debug', 'info', 'warning', 'error', 'critical']):
