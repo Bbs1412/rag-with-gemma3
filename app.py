@@ -6,7 +6,7 @@ import shutil
 from typing import Optional, List, Literal
 
 from log import Logger
-from llm import get_response, get_response_stream
+from llm import LC
 from files import check_create_uploads_folder, delete_old_files, save_file, get_pdf_iframe
 
 # ------------------------------------------------------------------------------
@@ -41,7 +41,7 @@ class Message:
 
 if "initialized" not in st.session_state:
     st.session_state.uploads_path = check_create_uploads_folder()
-    # delete_old_files(time_in_hours=24)
+    delete_old_files(time_in_hours=24)
 
     # Initialize Logger:
     st.session_state.logger = Logger(name="Streamlit")
@@ -53,6 +53,9 @@ if "initialized" not in st.session_state:
         Message('assistant', "How may I help you today?"),
         # Message("human", "Help me in some thing...")
     ]
+
+    # Langchain:
+    st.session_state.lc = LC(dummy_response=False)
 
     # User uploads:
     st.session_state.user_uploads = []
@@ -150,14 +153,19 @@ selected_file = st.sidebar.selectbox(
     options=st.session_state.user_uploads,
 )
 
-if selected_file:
-    file = os.path.join(uploads_path, selected_file)
-    status, content = get_pdf_iframe(file)
+# Tried to show pdf persistently, but it re-renders on each run and page hangs in streaming response:
+if not st.session_state.user_uploads:
+    st.sidebar.info("No files uploaded yet.", icon="ℹ️")
+else:
+    button = st.sidebar.button("Show Preview")
+    if selected_file and button:
+        file = os.path.join(uploads_path, selected_file)
+        status, content = get_pdf_iframe(file)
 
-    if status:
-        st.sidebar.markdown(content, unsafe_allow_html=True)
-    else:
-        st.sidebar.error(content, icon="😕")
+        if status:
+            st.sidebar.markdown(content, unsafe_allow_html=True)
+        else:
+            st.sidebar.error("Error loading file. Please try again.", icon="🚫")
 
 
 # ------------------------------------------------------------------------------
@@ -209,10 +217,11 @@ if user_message := st.chat_input(
         with st.spinner("Generating response..."):
             container = st.empty()
 
-            resp = get_response_stream(new_message.content, dummy=True)
+            resp = st.session_state.lc.get_response_stream(new_message.content)
             for chunk in resp:
                 full += chunk
-                container.container(border=True).markdown(full + "|")
+                trail_char = "█"  # "█", "▌", "|", "•"
+                container.container(border=True).markdown(full + trail_char)
 
     st.session_state.chat_history.append(Message("assistant", full))
     st.rerun()
