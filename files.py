@@ -27,14 +27,30 @@ def delete_old_files(time_in_hours: int = 24) -> None:
     """Delete files older than the specified time in hours."""
     current_time = time.time()
     cutoff_time = current_time - (time_in_hours * 3600)
+    old_files = []
 
     for file in os.listdir(UPLOADS_PATH):
         full_path = os.path.join(UPLOADS_PATH, file)
         creation_time = os.path.getctime(full_path)
 
         if creation_time < cutoff_time:
-            shutil.rmtree(full_path)
-            logger.info(f"Deleted old file: {file}")
+            old_files.append(full_path)
+
+    if old_files:
+        deleted_files, failed_files = [], []
+        for file in old_files:
+            try:
+                os.remove(file)
+                deleted_files.append(file)
+            except Exception as e:
+                failed_files.append(file + f" (Error: {repr(e)})")
+
+        if deleted_files:
+            logger.log(
+                f"Deleted files: [{', '.join(deleted_files)}]", level='info')
+        if failed_files:
+            logger.log(
+                f"Failed to delete files: {'; '.join(failed_files)}", level='error')
 
 
 def save_file(name: str, file_value_binary: bytes) -> Tuple[bool, str]:
