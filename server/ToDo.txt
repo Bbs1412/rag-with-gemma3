@@ -1,0 +1,19 @@
+[ ] Code LCEL chain
+[ ] Keep langchains chat history separate in backend
+[ ] Let the Streamlit maintain its own chat history
+
+[ ] Configure LLM code to answer with Chat history
+
+[ ] Find uniform images for user, ai and settings (already done)
+[v] Set file preview
+[ ] Reduce the speed of dummy llm again
+
+[ ] Instead of saving file names in st.sssss.user_uploads save {"name":"iframe"}
+    - Removes the delay when loading the file
+    - Adds one more step to the process :)
+
+[ ] While Answering, return the retrieved docs as well so that they can be seen
+    - Put the inside details dropdown (hidden) (see citations / sources)
+    - But, do not save them in the chat history
+    - Not needed to un-necessarily clutter the chat history
+
