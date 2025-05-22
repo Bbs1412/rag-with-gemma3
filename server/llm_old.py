@@ -1,8 +1,6 @@
-import os
 from log import Logger
 from time import sleep
 from random import choice
-from dotenv import load_dotenv
 from typing import Literal, Generator, Union
 
 
@@ -33,14 +31,8 @@ from langchain.chains import create_retrieval_chain, create_history_aware_retrie
 # Basic Declarations:
 # ------------------------------------------------------------------------------
 
-load_dotenv()
 logger = Logger(name="LLM", log_to_console=True)
 
-dummy_resp = [
-    "Hey there! 👋  \nI'm Gemma-3, a language model developed by the Gemma team at Google. I'm here to help you with questions and create interesting text. I’m still improving and learning each day. Let’s explore and have some fun together! 🤖",
-    "Hello 👋!  \nI'm Gemma-3 😎, a large language model created by the Gemma team at Google-Deepmind. I’m here to assist you with a wide range of tasks, from answering your questions to generating creative text formats. My goal is to provide helpful and informative responses. I'm still under development, and I’m learning new things every day! I’m excited to explore with you. Let's see what we can create! 🤖✨",
-    "Hello 👋!  \nI'm Gemma-3 😎, a powerful language model developed by the talented folks at Google-Deepmind. I'm here to help you out with a wide range of tasks—whether it’s answering complex questions, crafting detailed explanations, writing stories, poems, or even generating code snippets. I strive to be informative, creative, and engaging in every response I give.  \n\nI'm constantly learning, improving, and adapting to serve you better. Even though I'm still a work in progress, I'm pretty good at what I do! 😄  \n\nFeel free to test my capabilities—ask me anything, challenge me, or just chat. Let’s collaborate, learn new things, and build something awesome together. Ready when you are! 🚀🤖✨"
-]
 
 
 # ------------------------------------------------------------------------------
@@ -81,22 +73,14 @@ def get_response_stream(prompt: str = "Hello!", dummy: bool = False) -> Generato
         for chunk in llm.stream(prompt):
             yield chunk.content
 
-
 # ------------------------------------------------------------------------------
-# Main:
+# main
 # ------------------------------------------------------------------------------
-
-model_name = "gemma3:latest"
-emb_model_name = "mxbai-embed-large:latest"
 
 llm = ChatOllama(model=model_name, num_ctx=14000, temperature=1)
 llm_retrieval = ChatOllama(model=model_name, num_ctx=14000, temperature=0.75)
 
 embedding_model = OllamaEmbeddings(model=emb_model_name)
-
-max_context_size = 14000
-doc_chunk_size = 750
-doc_count = 3000 // doc_chunk_size
 
 
 # ------------------------------------------------------------------------------
