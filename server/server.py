@@ -125,6 +125,7 @@ async def simple(request: Request, chat_request: BasicChatRequest):
 class StreamChatRequest(BaseModel):
     query: str
     session_id: str
+    dummy: bool = False
 
 
 @app.post("/simple/stream")
@@ -133,11 +134,22 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
     - Post request expects JSON `{"query": "", "session_id": ""}` structure.
     """
     llm = request.app.state.llm_chat | request.app.state.output_parser
+    dummy = chat_request.dummy
 
     async def token_streamer():
         try:
-            async for chunk in llm.astream(chat_request.query):
-                yield chunk
+            if dummy:
+                # If dummy is True, stream dummy response
+                resp = get_dummy_response_stream(
+                    batch_tokens=config.BATCH_TOKENS,
+                    token_rate=config.TOKENS_PER_SEC
+                )
+                for chunk in resp:
+                    yield chunk
+
+            else:
+                async for chunk in llm.astream(chat_request.query):
+                    yield chunk
 
         except Exception as e:
             logger.exception("Streaming failed")
