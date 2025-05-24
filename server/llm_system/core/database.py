@@ -6,6 +6,18 @@ from langchain_community.vectorstores import FAISS
 
 
 class VectorDB:
+    """A class to manage the vector database using FAISS and Ollama embeddings.
+    
+    Args:
+        embed_model (str): The name of the Ollama embeddings model to use.
+        persist_path (str, optional): Path to the persisted FAISS database. If None, a new DB is created.
+        retriever_num_docs (int): Number of documents to retrieve for similarity search.
+
+    ## Functions:
+        + `get_embeddings()`: Returns the Ollama embeddings model.
+        + `get_vector_store()`: Returns the FAISS vector store.
+        + `get_retriever()`: Returns the retriever configured for similarity search.
+    """
     def __init__(
         self, embed_model: str,
         persist_path: Optional[str] = None,
