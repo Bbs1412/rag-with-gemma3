@@ -1,80 +1,91 @@
 import logging
-from typing import Literal
+from typing import Literal, Optional
 
 # Logs priority levels:
 # CRITICAL > ERROR > WARNING > INFO > DEBUG > NOTSET
 
-_loggers = {}
+# Global cache for logger instances:
+_logger_instances = {}
 
-def get_logger(name: str = "Streamlit", **kwargs):
-    if name not in _loggers:
-        _loggers[name] = Logger(name=name, **kwargs)
-    return _loggers[name]
 
-class Logger:
-    def __init__(self, name: str, log_file: str = "app.log", log_to_console: bool = False, log_to_file: bool = True):
-        if name in _loggers:
-            self.logger = _loggers[name].logger
-            
-        else:
-            self.logger = logging.getLogger(name)
-            self.logger.setLevel(logging.DEBUG)
-            self.log_to_console = log_to_console
-            self.log_to_file = log_to_file
+def get_logger(
+    name: str = "unset",
+    log_to_console: bool = False,
+    log_to_file: bool = True,
+    log_file: Optional[str] = "app.log",
+) -> logging.Logger:
+    """Get logger with the given name and configuration.
+    - If a logger with the same name already exists, it returns the cached instance.
+    - Else, it creates a new logger with the specified configuration.
 
-            # # Avoid adding handlers multiple times
-            # if not self.logger.handlers:
-            # File Handler
-            if self.log_to_file:
-                file_handler = logging.FileHandler(log_file)
-                file_handler.setLevel(logging.DEBUG)
-                formatter = logging.Formatter(
-                    '%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s',
-                    datefmt='%d-%m-%y %H:%M:%S'
-                )
-                file_handler.setFormatter(formatter)
-                self.logger.addHandler(file_handler)
+    Args:
+        name (str): Name of the logger (will be logged as source).
+        log_to_console (bool): Whether to log to console.
+        log_to_file (bool): Whether to log to file.
+        log_file (Optional[str]): Path to the log file. If None, file logging is disabled.
 
-            # Console Handler
-            if self.log_to_console:
-                console_handler = logging.StreamHandler()
-                console_handler.setLevel(logging.INFO)
-                formatter = logging.Formatter(
-                    '%(asctime)s.%(msecs)03d [%(levelname)s] [%(name)s] %(message)s',
-                    datefmt='%d-%m-%y %H:%M:%S'
-                )
-                console_handler.setFormatter(formatter)
-                self.logger.addHandler(console_handler)
+    Returns:
+        logging.Logger: Configured logger instance.
+    """
 
-            self.logger.propagate = False
-            _loggers[name] = self
-            
-            self.logger.info(
-                f"Logger initialized for {name}. [File:{'Yes' if log_to_file else 'No'}, Console:{'Yes' if log_to_console else 'No'}]")
+    if name in _logger_instances:
+        return _logger_instances[name]
 
-    # Function to log messages:
-    def log(self, message: str, level: Literal['debug', 'info', 'warning', 'error', 'critical']):
-        if level == "debug":
-            self.logger.debug(f"{message}")
-        elif level == "info":
-            self.logger.info(f"{message}")
-        elif level == "warning":
-            self.logger.warning(f"{message}")
-        elif level == "error":
-            self.logger.error(f"{message}")
-        elif level == "critical":
-            self.logger.critical(f"{message}")
-        else:
-            raise ValueError(
-                "Invalid log level. Choose from ['debug', 'info', 'warning', 'error', 'critical'].")
+    # Create logger instance
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False  # Prevent duplicate logs from root logger
+
+    formatter = logging.Formatter(
+        # '%(asctime)s.%(msecs)03d [%(levelname)8s] [%(name)s] %(message)s',
+        '%(asctime)s.%(msecs)03d [%(levelname)-8s] [%(name)s] %(message)s',
+        datefmt='%d-%m-%y %H:%M:%S'
+    )
+
+    # File Handler
+    if log_to_file and log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    # Console Handler
+    if log_to_console:
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.WARNING)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+
+    logger.info(
+        f"Logger initialized. [File: '{log_file if log_to_file else 'No'}', Console: '{'Yes' if log_to_console else 'No'}']"
+    )
+
+    _logger_instances[name] = logger
+    return logger
+
+
+def log_message(
+    logger: logging.Logger,
+    message: str,
+    level: Literal["debug", "info", "warning", "error", "critical"] = "info"
+):
+    """Utility to log messages at various levels.
+
+    Args:
+        logger (logging.Logger): The logger instance to use.
+        message (str): The message to log.
+        level (Literal): The logging level to use. Defaults to 'info'.
+    """
+
+    # Same as logger.debug(message),... etc.
+    getattr(logger, level)(message)
 
 
 # Example usage:
 if __name__ == "__main__":
-    logger = Logger(
-        name="example_logger", log_to_console=True, log_to_file=True)
-    logger.log("This is a debug message.", "debug")
-    logger.log("This is an info message.", "info")
-    logger.log("This is a warning message.", "warning")
-    logger.log("This is an error message.", "error")
-    logger.log("This is a critical message.", "critical")
+    logger = get_logger(name="Test", log_to_console=True, log_to_file=True)
+    logger.debug("This is a debug message")
+    logger.info("This is an info message")
+    logger.warning("This is a warning message")
+    logger.error("This is an error message")
+    logger.critical("This is a critical message")
