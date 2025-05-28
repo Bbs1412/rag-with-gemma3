@@ -1,5 +1,6 @@
 # FastAPI server which will handle all the backend and GenAI aspects of the application
-# Serve this with uvicorn using: uvicorn server:app --reload
+# Serve this with uvicorn using: uvicorn server:app
+# Avoid using --reload flag, because, LLMs will keep reloading and system will overheat.
 
 
 from fastapi import FastAPI, Request, Query
@@ -107,6 +108,7 @@ class BasicChatRequest(BaseModel):
 async def simple(request: Request, chat_request: BasicChatRequest):
     """Endpoint to handle ont time generation queries.
     - Post request expects JSON `{"query": "", "session_id": "", "dummy":T/F}` structure.
+    - Return JSON with `{"response": "", "session_id": ""}` structure.
     """
 
     llm = request.app.state.llm_chat | request.app.state.output_parser
@@ -122,9 +124,7 @@ async def simple(request: Request, chat_request: BasicChatRequest):
             return get_dummy_response()
 
         else:
-            result = await llm.ainvoke(
-                input=query,
-            )
+            result = await llm.ainvoke(input=query)
 
             log.info(f"/simple Response generated for '{session_id}'.")
             return {"response": result, "session_id": session_id}
@@ -146,15 +146,16 @@ class StreamChatRequest(BaseModel):
 async def chat_stream(request: Request, chat_request: StreamChatRequest):
     """Endpoint to handle streaming responses for one time generation queries.
     - Post request expects JSON `{"query": "", "session_id": "", "dummy":T/F}` structure.
+    - Return NDJSON with types "metadata", "content", or "error".
     """
     llm = request.app.state.llm_chat | request.app.state.output_parser
     session_id = chat_request.session_id.strip() or "unknown_session"
- 
+
     async def token_streamer():
         try:
             dummy = chat_request.dummy
-            log.info(
-                f"/simple/stream {'dummy' if dummy else 'real'} response requested by '{session_id}'")
+            s = 'dummy' if dummy else 'real'
+            log.info(f"/simple/stream {s} response requested by '{session_id}'")
 
             # Start be sending meta data first.
             yield json.dumps({
@@ -172,8 +173,7 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
                 )
                 for chunk in resp:
                     if await request.is_disconnected():
-                        log.warning(
-                            f"/simple/stream client disconnected for '{session_id}'")
+                        log.warning(f"/simple/stream client disconnected for '{session_id}'")
                         break
 
                     yield json.dumps({
@@ -184,8 +184,7 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
             else:
                 async for chunk in llm.astream(chat_request.query):
                     if await request.is_disconnected():
-                        log.warning(
-                            f"/simple/stream client disconnected for '{session_id}'")
+                        log.warning(f"/simple/stream client disconnected for '{session_id}'")
                         break
 
                     yield json.dumps({
@@ -222,3 +221,93 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
 # RAG Chain Endpoint:
 # ------------------------------------------------------------------------------
 
+# Create endpoint for rag:
+# input = {
+#     query: str,
+#     session_id: str,
+#     dummy: bool = False
+# }
+# Output will be streamed in same format as the simple/streaming chat endpoint.
+
+class RagChatRequest(BaseModel):
+    query: str
+    session_id: str
+    dummy: bool = False
+
+
+@app.post("/rag")
+async def rag(request: Request, chat_request: RagChatRequest):
+    """Endpoint to handle RAG (Retrieval-Augmented Generation) queries.
+    - Post request expects JSON `{"query": "", "session_id": "", "dummy":T/F}` structure.
+    - Return NDJSON with types "metadata", "content", "context", or "error".
+    """
+    rag_chain = request.app.state.rag_chain
+    session_id = chat_request.session_id.strip() or "unknown_session"
+
+    async def token_streamer():
+        try:
+            dummy = chat_request.dummy
+            log.info(
+                f"/rag {'dummy' if dummy else 'real'} response requested by '{session_id}'")
+
+            # Start be sending meta data first.
+            yield json.dumps({
+                "type": "metadata",
+                "data": {"session_id": session_id}
+            }) + "\n"
+
+            if dummy:
+                # If dummy is True, stream dummy response
+                resp = get_dummy_response_stream(
+                    batch_tokens=config.BATCH_TOKENS,
+                    token_rate=config.TOKENS_PER_SEC
+                )
+                for chunk in resp:
+                    if await request.is_disconnected():
+                        log.warning(f"/rag client disconnected for '{session_id}'")
+                        break
+
+                    yield json.dumps({
+                        "type": "content",
+                        "data": chunk
+                    }) + "\n"
+
+            else:
+                async for chunk in rag_chain.astream(
+                    input={"input": chat_request.query},
+                    config={"configurable": {"session_id": session_id}}
+                ):
+                    if await request.is_disconnected():
+                        log.warning(f"/rag client disconnected for '{session_id}'")
+                        break
+
+                    # there is answer/input/context
+                    if "answer" in chunk:
+                        yield json.dumps({
+                            "type": "content",
+                            "data": chunk["answer"]
+                        }) + "\n"
+
+                    elif "context" in chunk:
+                        for document in chunk["context"]:
+                            if await request.is_disconnected():
+                                log.warning(f"/rag client disconnected for '{session_id}'")
+                                break
+                            yield json.dumps({
+                                "type": "context",
+                                "data": {
+                                    "metadata": document.metadata,
+                                    "page_content": document.page_content
+                                }
+                            }) + "\n"
+
+            log.info(f"/rag Streaming completed for '{session_id}'")
+
+        except Exception as e:
+            log.exception(f"/rag Error {e} for '{session_id}'")
+            yield json.dumps({
+                "type": "error",
+                "data": str(e)
+            }) + "\n"
+
+    return StreamingResponse(token_streamer(), media_type="text/plain")

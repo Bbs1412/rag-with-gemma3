@@ -53,6 +53,6 @@ def build_rag_chain(
         runnable=rag_chain,
         get_session_history=get_history_fn,
         input_messages_key="input",
-        history_messages_key="chat_history",
+        history_messages_key="messages",
         output_messages_key="answer",
     )
