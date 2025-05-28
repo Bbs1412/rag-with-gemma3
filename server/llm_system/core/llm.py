@@ -4,8 +4,10 @@ from typing import Generator
 
 from langchain_ollama import ChatOllama
 from langchain_core.output_parsers import StrOutputParser
-
 from langchain_core.language_models.chat_models import BaseChatModel as T_LLM
+
+from logger import get_logger
+log = get_logger(name="core_llm")
 
 
 def get_llm(model_name: str, context_size: int, temperature: float):
@@ -19,7 +21,21 @@ def get_llm(model_name: str, context_size: int, temperature: float):
     Returns:
         ChatOllama: An instance of the ChatOllama model configured with the specified parameters.
     """
-    return ChatOllama(model=model_name, num_ctx=context_size, temperature=temperature)
+
+    log.info(
+        f"Initializing LLM(model={model_name}, ctx_size={context_size}, temp={temperature})")
+
+    try:
+        # Tried a lot to check for model loading success or failure, but there
+        model = ChatOllama(model=model_name, num_ctx=context_size, temperature=temperature)
+        _ = model.invoke("ping")
+        log.info(f"LLM model '{model_name}' initialized and connection verified.")
+        return model
+
+    except Exception as e:
+        log.error(f"Failed to initialize LLM model '{model_name}': {e}")
+        raise RuntimeError(
+            f"Could not initialize LLM model '{model_name}'") from e
 
 
 def get_output_parser():
@@ -28,6 +44,7 @@ def get_output_parser():
     Returns:
         StrOutputParser: An instance of StrOutputParser to parse the model's output.
     """
+    log.info("Initializing the output parser for LLM responses.")
     return StrOutputParser()
 
 
@@ -43,6 +60,7 @@ dummy_responses = [
 
     "3> Hello 👋!  \nI'm Gemma-3 😎, a powerful language model developed by the talented folks at Google-Deepmind. I'm here to help you out with a wide range of tasks—whether it’s answering complex questions, crafting detailed explanations, writing stories, poems, or even generating code snippets. I strive to be informative, creative, and engaging in every response I give.  \n\nI'm constantly learning, improving, and adapting to serve you better. Even though I'm still a work in progress, I'm pretty good at what I do! 😄  \n\nFeel free to test my capabilities—ask me anything, challenge me, or just chat. Let’s collaborate, learn new things, and build something awesome together. Ready when you are! 🚀🤖✨"
 ]
+log.info(f"Loaded {len(dummy_responses)} dummy responses for testing.")
 
 
 def get_dummy_response() -> str:

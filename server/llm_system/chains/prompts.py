@@ -1,5 +1,7 @@
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
+from logger import get_logger
+log = get_logger(name="chains_prompts")
 
 # Chat Template:
 template_chat = ChatPromptTemplate.from_messages(
@@ -40,3 +42,5 @@ template_summarize = ChatPromptTemplate.from_messages(
         ("human", "{input}. \n\n **Make one standalone prompt as asked!**")
     ]
 )
+
+log.info("Initialized chat and summarize prompt templates.")

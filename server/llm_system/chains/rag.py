@@ -9,6 +9,9 @@ from typing import Callable
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_core.language_models.chat_models import BaseChatModel
 
+from logger import get_logger
+log = get_logger(name="chains_rag")
+
 
 def build_rag_chain(
         llm_chat: BaseChatModel, llm_summary: BaseChatModel,
@@ -25,20 +28,26 @@ def build_rag_chain(
         RunnableWithMessageHistory: A runnable chain that processes user input and chat history
         to provide a final answer based on retrieved documents and chat context.
     """
-    
+
+    log.info("Building the Conversational RAG Chain...")
+
     # Chain to summarize the history and retrieve relevant documents
     # 3 User Input + Chat History > Summarizer Template > Standalone Que > Get Docs
     retriever_chain = create_history_aware_retriever(
         llm_summary, retriever, summary_prompt)
+    log.info("Created the retriever chain with summarization.")
 
     # Chain to combine the retrieved documents and get the final answer
     # 4 Multiple Docs > Combine All > Chat Template > Final Output
     qa_chain = create_stuff_documents_chain(llm=llm_chat, prompt=chat_prompt)
+    log.info("Created the QA chain with chat template.")
 
     # Main RAG Chain:
     # 2 Input + Chat History > [ `Summarizer Template` > `Get Docs` ] > [ `Combine` > `Chat Template` ] > Output
     rag_chain = create_retrieval_chain(retriever_chain, qa_chain)
+    log.info("Created the main RAG chain.")
 
+    log.info("Returning the final Conversational RAG Chain w history.")
     # 1 Final Conversational RAG Chain:
     return RunnableWithMessageHistory(
         runnable=rag_chain,

@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
 
     app.state.output_parser = get_output_parser()
     app.state.vector_db = VectorDB(embed_model=config.EMB_MODEL_NAME)
-    app.state.history_store = HistoryStore(logger=log)
+    app.state.history_store = HistoryStore()
 
     app.state.rag_chain = build_rag_chain(
         llm_chat=app.state.llm_chat,
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
         get_history_fn=app.state.history_store.get_session_history,
     )
 
-    log.info("All LLM systems initialized.")
+    log.info("All LLM components initialized.")
 
     # Lifespan
     yield
@@ -215,3 +215,10 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
 # ------------------------------------------------------------------------------
 # File receive and processing endpoints:
 # ------------------------------------------------------------------------------
+
+# Will add them later. First focusing on the core RAG functionality and LLM responses.
+
+# ------------------------------------------------------------------------------
+# RAG Chain Endpoint:
+# ------------------------------------------------------------------------------
+
