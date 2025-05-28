@@ -3,13 +3,12 @@
 
 
 from fastapi import FastAPI, Request, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
+
+import json
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
-
-
-# Logger:
-import logging
 
 # LLM System Imports:
 from llm_system.core.llm import get_llm, get_output_parser  # Functions
@@ -24,8 +23,8 @@ from llm_system import config                               # Constants
 from llm_system.core.llm import T_LLM
 
 # import my logger here:
-logger = logging.getLogger("rag_server")
-logging.basicConfig(level=logging.INFO)
+import logger
+log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
 
 
 # ------------------------------------------------------------------------------
@@ -48,7 +47,7 @@ async def lifespan(app: FastAPI):
 
     app.state.output_parser = get_output_parser()
     app.state.vector_db = VectorDB(embed_model=config.EMB_MODEL_NAME)
-    app.state.history_store = HistoryStore(logger=logger)
+    app.state.history_store = HistoryStore(logger=log)
 
     app.state.rag_chain = build_rag_chain(
         llm_chat=app.state.llm_chat,
@@ -57,19 +56,30 @@ async def lifespan(app: FastAPI):
         get_history_fn=app.state.history_store.get_session_history,
     )
 
-    logger.info("All LLM systems initialized.")
+    log.info("All LLM systems initialized.")
 
     # Lifespan
     yield
 
     # Shutdown
-    logger.info("Shutting down LLM server...")
+    log.info("Shutting down LLM server...")
     # Add any cleanup part here
     # Like saving vector DB, or shutting down subprocesses
 
 
 # Make one FastAPI app instance with the lifespan context manager
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:8501",
+        "http://127.0.0.1:5500",
+        # "http://localhost:5500",
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"]
+)
 
 
 # ------------------------------------------------------------------------------
@@ -100,13 +110,15 @@ async def simple(request: Request, chat_request: BasicChatRequest):
     """
 
     llm = request.app.state.llm_chat | request.app.state.output_parser
+    session_id = chat_request.session_id.strip() or "unknown_session"
+
     try:
-        # Access the query and session_id from the request body
         query = chat_request.query
-        session_id = chat_request.session_id
         dummy = chat_request.dummy
+        log.info(f"/simple Requested by '{session_id}'")
 
         if dummy:
+            log.info(f"/simple Dummy response returned for '{session_id}'")
             return get_dummy_response()
 
         else:
@@ -114,10 +126,12 @@ async def simple(request: Request, chat_request: BasicChatRequest):
                 input=query,
             )
 
+            log.info(f"/simple Response generated for '{session_id}'.")
             return {"response": result, "session_id": session_id}
 
     except Exception as e:
-        logger.exception("LLM response failed.")
+
+        log.exception(f"/simple Error {e} for '{session_id}'")
         return JSONResponse(status_code=500, content={"error": str(e)})
 
 
@@ -131,13 +145,25 @@ class StreamChatRequest(BaseModel):
 @app.post("/simple/stream")
 async def chat_stream(request: Request, chat_request: StreamChatRequest):
     """Endpoint to handle streaming responses for one time generation queries.
-    - Post request expects JSON `{"query": "", "session_id": ""}` structure.
+    - Post request expects JSON `{"query": "", "session_id": "", "dummy":T/F}` structure.
     """
     llm = request.app.state.llm_chat | request.app.state.output_parser
-    dummy = chat_request.dummy
-
+    session_id = chat_request.session_id.strip() or "unknown_session"
+ 
     async def token_streamer():
         try:
+            dummy = chat_request.dummy
+            log.info(
+                f"/simple/stream {'dummy' if dummy else 'real'} response requested by '{session_id}'")
+
+            # Start be sending meta data first.
+            yield json.dumps({
+                "type": "metadata",
+                "data": {"session_id": session_id}
+            }) + "\n"
+            # NDJSON (newline-delimited JSON) - Frontend will merge full response my splitting this
+
+            #  Then send the actual response content:
             if dummy:
                 # If dummy is True, stream dummy response
                 resp = get_dummy_response_stream(
@@ -145,14 +171,47 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
                     token_rate=config.TOKENS_PER_SEC
                 )
                 for chunk in resp:
-                    yield chunk
+                    if await request.is_disconnected():
+                        log.warning(
+                            f"/simple/stream client disconnected for '{session_id}'")
+                        break
+
+                    yield json.dumps({
+                        "type": "content",
+                        "data": chunk
+                    }) + "\n"
 
             else:
                 async for chunk in llm.astream(chat_request.query):
-                    yield chunk
+                    if await request.is_disconnected():
+                        log.warning(
+                            f"/simple/stream client disconnected for '{session_id}'")
+                        break
+
+                    yield json.dumps({
+                        "type": "content",
+                        "data": chunk
+                    }) + "\n"
+
+            # In the end, you can send some "Done" etc if u need some conditional logic
+            # Server will auto send EOF to mark end of generator response.
+            # yield json.dumps({
+            #     "type": "end",
+            #     "data": "done"
+            # }) + "\n"
+            log.info(f"/simple/stream Streaming completed for '{session_id}'")
 
         except Exception as e:
-            logger.exception("Streaming failed")
-            yield f"[ERROR] {str(e)}"
+            log.exception(f"/simple/stream Error {e} for '{session_id}'")
+            yield json.dumps({
+                "type": "error",
+                "data": str(e)
+            }) + "\n"
 
+    # Return a StreamingResponse with the token streamer generator (basically enable streaming)
     return StreamingResponse(token_streamer(), media_type="text/plain")
+
+
+# ------------------------------------------------------------------------------
+# File receive and processing endpoints:
+# ------------------------------------------------------------------------------
