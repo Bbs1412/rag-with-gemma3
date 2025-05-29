@@ -33,8 +33,7 @@ def build_rag_chain(
 
     # Chain to summarize the history and retrieve relevant documents
     # 3 User Input + Chat History > Summarizer Template > Standalone Que > Get Docs
-    retriever_chain = create_history_aware_retriever(
-        llm_summary, retriever, summary_prompt)
+    retriever_chain = create_history_aware_retriever(llm_summary, retriever, summary_prompt)
     log.info("Created the retriever chain with summarization.")
 
     # Chain to combine the retrieved documents and get the final answer
@@ -53,6 +52,6 @@ def build_rag_chain(
         runnable=rag_chain,
         get_session_history=get_history_fn,
         input_messages_key="input",
-        history_messages_key="messages",
+        history_messages_key="chat_history",
         output_messages_key="answer",
     )

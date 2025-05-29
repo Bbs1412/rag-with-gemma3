@@ -18,7 +18,7 @@ template_chat = ChatPromptTemplate.from_messages(
             "Contextual Documents:\n"
             "<CONTEXT>{context}</CONTEXT>"
         )),
-        MessagesPlaceholder(variable_name="messages"),
+        MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{input} \n\n **Strictly stick to the instructions!**")
     ]
 )
@@ -38,7 +38,7 @@ template_summarize = ChatPromptTemplate.from_messages(
             "- It will be used to retrieve the most relevant documents.\n\n"
             "Only return the rewritten standalone prompt. Do not add explanations or formatting."
         ])),
-        MessagesPlaceholder(variable_name="messages"),
+        MessagesPlaceholder(variable_name="chat_history"),
         ("human", "{input}. \n\n **Make one standalone prompt as asked!**")
     ]
 )
