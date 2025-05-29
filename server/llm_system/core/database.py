@@ -15,6 +15,7 @@ class VectorDB:
         embed_model (str): The name of the Ollama embeddings model to use.
         persist_path (str, optional): Path to the persisted FAISS database. If None, a new DB is created.
         retriever_num_docs (int): Number of documents to retrieve for similarity search.
+        verify_connection (bool): Whether to verify the connection to the embeddings model.
 
     ## Functions:
         + `get_embeddings()`: Returns the Ollama embeddings model.
@@ -25,7 +26,8 @@ class VectorDB:
     def __init__(
         self, embed_model: str,
         persist_path: Optional[str] = None,
-        retriever_num_docs: int = 20
+        retriever_num_docs: int = 5,
+        verify_connection: bool = False
     ):
         log.info(
             f"Initializing VectorDB with '{embed_model}' embeddings, path='{persist_path}', k={retriever_num_docs} docs."
@@ -34,21 +36,23 @@ class VectorDB:
         # Here, I have configured the model to be loaded on CPU completely.
         # Reason: Ollama keeps alternately loading and unloading the LLM/Emb model on GPU.
         # Solution: Load the LLM on GPU and the Embedding model on CPU 100%.
-        try:
-            self.embeddings = OllamaEmbeddings(model=embed_model, num_gpu=0)
-            self.embeddings.embed_documents(['a'])
-            log.info(f"Embeddings model '{embed_model}' initialized and verified.")
+        self.embeddings = OllamaEmbeddings(model=embed_model, num_gpu=0)
 
-        except Exception as e:
-            log.error(f"Failed to initialize Embeddings: {e}")
-            raise RuntimeError(
-                f"Could not initialize Embeddings with model '{embed_model}'") from e
+        if verify_connection:
+            try:
+                self.embeddings.embed_documents(['a'])
+                log.info(f"Embeddings model '{embed_model}' initialized and verified.")
+
+            except Exception as e:
+                log.error(f"Failed to initialize Embeddings: {e}")
+                raise RuntimeError(f"Couldn't initialize Embeddings model '{embed_model}'") from e
+        else:
+            log.warning(f"Embeddings '{embed_model}' initialized without connection verification.")
 
         # If no persisted DB path is provided, create a new FAISS DB
         if persist_path is None:
             dummy_doc = Document(page_content="Hello World!")
-            self.db = FAISS.from_documents(
-                [dummy_doc], embedding=self.embeddings)
+            self.db = FAISS.from_documents([dummy_doc], embedding=self.embeddings)
             log.info("Created a new FAISS vector store with a dummy document.")
 
         else:

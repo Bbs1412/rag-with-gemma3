@@ -10,32 +10,35 @@ from logger import get_logger
 log = get_logger(name="core_llm")
 
 
-def get_llm(model_name: str, context_size: int, temperature: float):
+def get_llm(model_name: str, context_size: int,
+            temperature: float, verify_connection: bool = False) -> T_LLM:
     """Get the LLM model with the specified parameters.
 
     Args:
         model_name (str): The name of the LLM model to use.
         context_size (int): The maximum context size for the model.
         temperature (float): The temperature setting for the model.
+        verify_connection (bool): Whether to verify the connection to the model.
 
     Returns:
-        ChatOllama: An instance of the ChatOllama model configured with the specified parameters.
+        BaseChatModel: An instance of the LLM model configured with the specified parameters.
     """
 
-    log.info(
-        f"Initializing LLM(model={model_name}, ctx_size={context_size}, temp={temperature})")
+    log.info(f"Initializing LLM(model={model_name}, ctx_size={context_size}, temp={temperature})")
+    model = ChatOllama(model=model_name, num_ctx=context_size, temperature=temperature)
 
-    try:
-        # Tried a lot to check for model loading success or failure, but there
-        model = ChatOllama(model=model_name, num_ctx=context_size, temperature=temperature)
-        _ = model.invoke("ping")
-        log.info(f"LLM model '{model_name}' initialized and connection verified.")
-        return model
+    if verify_connection:
+        try:
+            _ = model.invoke("ping")
+            log.info(f"LLM model '{model_name}' initialized and connection verified.")
 
-    except Exception as e:
-        log.error(f"Failed to initialize LLM model '{model_name}': {e}")
-        raise RuntimeError(
-            f"Could not initialize LLM model '{model_name}'") from e
+        except Exception as e:
+            log.error(f"Failed to initialize LLM model '{model_name}': {e}")
+            raise RuntimeError(f"Could not initialize LLM model '{model_name}'") from e
+    else:
+        log.warning(f"LLM model '{model_name}' initialized without connection verification.")
+
+    return model
 
 
 def get_output_parser():

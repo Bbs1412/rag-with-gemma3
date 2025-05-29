@@ -1,7 +1,6 @@
 # FastAPI server which will handle all the backend and GenAI aspects of the application
-# Serve this with uvicorn using: uvicorn server:app
+# uvicorn server:app --reload
 # Avoid using --reload flag, because, LLMs will keep reloading and system will overheat.
-
 
 from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,16 +37,21 @@ async def lifespan(app: FastAPI):
 
     # Startup
     app.state.llm_chat = get_llm(
-        model_name=config.LLM_MODEL_NAME,
+        model_name=config.LLM_CHAT_MODEL_NAME,
         context_size=config.MAX_CONTENT_SIZE,
-        temperature=config.LLM_TEMPERATURE,
+        temperature=config.LLM_CHAT_TEMPERATURE,
+        verify_connection=config.VERIFY_LLM_CONNECTION
     )
 
     # app.state.llm_summary = get_llm(...)
     app.state.llm_summary = app.state.llm_chat
 
     app.state.output_parser = get_output_parser()
-    app.state.vector_db = VectorDB(embed_model=config.EMB_MODEL_NAME)
+    app.state.vector_db = VectorDB(
+        embed_model=config.EMB_MODEL_NAME,
+        retriever_num_docs=config.DOCS_NUM_COUNT,
+        verify_connection=config.VERIFY_EMB_CONNECTION,
+    )
     app.state.history_store = HistoryStore()
 
     app.state.rag_chain = build_rag_chain(
@@ -168,7 +172,7 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
             if dummy:
                 # If dummy is True, stream dummy response
                 resp = get_dummy_response_stream(
-                    batch_tokens=config.BATCH_TOKENS,
+                    batch_tokens=config.BATCH_TOKEN_PS,
                     token_rate=config.TOKENS_PER_SEC
                 )
                 for chunk in resp:
@@ -259,7 +263,7 @@ async def rag(request: Request, chat_request: RagChatRequest):
             if dummy:
                 # If dummy is True, stream dummy response
                 resp = get_dummy_response_stream(
-                    batch_tokens=config.BATCH_TOKENS,
+                    batch_tokens=config.BATCH_TOKEN_PS,
                     token_rate=config.TOKENS_PER_SEC
                 )
                 for chunk in resp:
