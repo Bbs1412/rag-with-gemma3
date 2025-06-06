@@ -1,22 +1,44 @@
-# This file has all the configuration part of AI System
+"""
+config.py - Central configuration for AI System.
 
-import os
+This module stores all configurable constants related to:
+- LLMs (chat, summarization)
+- Embeddings
+- Chunking and content limits
+- Verification checks
+- Dummy response simulator
+"""
+
+# import os
 # from dotenv import load_dotenv
 # load_dotenv()
 
 
-# ------------------------------------------------------------------------------
-# Main:
-# ------------------------------------------------------------------------------
+# Model configuration::
+LLM_CHAT_MODEL_NAME: str = "gemma3:latest"              # Chatting model
+LLM_CHAT_TEMPERATURE: float = 0.75
+LLM_SUMMARY_MODEL_NAME: str = "gemma3:latest"           # History Summarization model
+LLM_SUMMARY_TEMPERATURE: float = 0.5
+EMB_MODEL_NAME: str = "mxbai-embed-large:latest"        # Embeddings model
 
-LLM_MODEL_NAME = "gemma3:latest"
-EMB_MODEL_NAME = "mxbai-embed-large:latest"
+# The max token count which shall be allowed after 'chat_history + input + context'.
+MAX_CONTENT_SIZE: int = 14000
 
-MAX_CONTENT_SIZE = 14000
-LLM_TEMPERATURE = 0.75
 
-DOC_CHUNK_SIZE = 750
-DOC_NUM_COUNT = 3000 // DOC_CHUNK_SIZE
+# Verification configuration:
+#   - Whether to immediately verify the connection to
+#   - the LLM models and the Embeddings models after initialization.
+#   - Useful specifically for Ollama models, as they can be loaded on GPU or CPU.
+VERIFY_LLM_CONNECTION: bool = False
+VERIFY_EMB_CONNECTION: bool = False
 
-TOKENS_PER_SEC = 50
-BATCH_TOKENS = 2
+
+# Document Chunking properties:
+DOC_CHAR_LIMIT: int = 2000                              # Char limit for each doc.
+DOC_TOKEN_SIZE: int = DOC_CHAR_LIMIT // 4               # Appx number of tokens in each doc.
+DOCS_NUM_COUNT: int = 3000 // DOC_TOKEN_SIZE            # Max num of docs to retrieve.
+
+
+# Dummy response mode properties:
+TOKENS_PER_SEC: int = 50                                # num of tokens yielded per sec
+BATCH_TOKEN_PS: int = 2                                 # num of tokens yielded in each batch
