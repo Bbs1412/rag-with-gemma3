@@ -6,7 +6,9 @@ from fastapi import FastAPI, Request, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 
+import os
 import json
+import time
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
@@ -219,6 +221,44 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
 # File receive and processing endpoints:
 # ------------------------------------------------------------------------------
 
+# First end-point to call on client initialization:
+class LoginRequest(BaseModel):
+    login_id: str
+    password: str
+
+
+@app.post("/login")
+async def login(request: Request, login_request: LoginRequest):
+    """Endpoint to handle user login.
+    + Client sends login_id and password for login
+    + Based on it, server sends back one user_id
+    + But, for now, it is skipped and we will send one dummy user_id
+    + Folder is created for user_id, older files are removed
+
+    - Post request expects JSON `{"login_id": "", "password": ""}` structure.
+    - Return JSON with `{"user_id": "dummy_user_id"}` structure.
+    """
+    # For now, we will just return a dummy user_id
+    user_id = "bot_user"
+
+    # In future, can implement actual user authentication and return a real user_id
+    log.info(f"/login requested by '{user_id}'")
+
+    # Check if folder exists in 'user_uploads/' with user_id
+    os.makedirs(f"user_uploads/{user_id}", exist_ok=True)
+
+    # Old any older data if exists (older than 24 hours)
+    for file in os.listdir(f"user_uploads/{user_id}"):
+        file_path = os.path.join(f"user_uploads/{user_id}", file)
+        if os.path.isfile(file_path):
+            # Remove the file if it is older than 24 hours
+            if (os.path.getmtime(file_path) < (time.time() - 3600 * 24)):
+                os.remove(file_path)
+                log.info(f"Removed old file: '{user_id}/{file}'")
+
+    return {"user_id": user_id}
+
+
 # Will add them later. First focusing on the core RAG functionality and LLM responses.
 
 # ------------------------------------------------------------------------------
@@ -232,6 +272,7 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
 #     dummy: bool = False
 # }
 # Output will be streamed in same format as the simple/streaming chat endpoint.
+
 
 class RagChatRequest(BaseModel):
     query: str
