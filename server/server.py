@@ -32,6 +32,15 @@ log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
 
 
 # ------------------------------------------------------------------------------
+# Constants:
+# ------------------------------------------------------------------------------
+
+# UPLOADS_DIR: str = "user_uploads"
+OLD_FILE_THRESHOLD: int = 3600 * 24  # 24 hours in seconds
+# OLD_FILE_THRESHOLD: int = 60         # 1 min
+
+
+# ------------------------------------------------------------------------------
 # FastAPI Startup:
 # ------------------------------------------------------------------------------
 
@@ -67,7 +76,13 @@ async def lifespan(app: FastAPI):
 
     log.info("[LifeSpan] All LLM components initialized.")
 
-    # Lifespan
+    # sq_db.delete_database()
+    sq_db.create_tables()
+
+    # Files
+    files.check_create_uploads_folder()
+
+    # [ Lifespan ]
     yield
 
     # [ Shutdown ]
@@ -241,22 +256,31 @@ async def login(request: Request, login_request: LoginRequest):
     - Return JSON with `{"user_id": "dummy_user_id"}` structure.
     """
     # For now, we will just return a dummy user_id
-    user_id = "bot_user"
-
     # In future, can implement actual user authentication and return a real user_id
+    user_id = "bot_user"
     log.info(f"/login requested by '{user_id}'")
 
-    # Check if folder exists in 'user_uploads/' with user_id
-    os.makedirs(f"user_uploads/{user_id}", exist_ok=True)
+    # Check if folder exists in UPLOADS_DIR with user_id
+    files.create_user_uploads_folder(user_id=user_id)
 
     # Old any older data if exists (older than 24 hours)
-    for file in os.listdir(f"user_uploads/{user_id}"):
-        file_path = os.path.join(f"user_uploads/{user_id}", file)
-        if os.path.isfile(file_path):
-            # Remove the file if it is older than 24 hours
-            if (os.path.getmtime(file_path) < (time.time() - 3600 * 24)):
-                os.remove(file_path)
-                log.info(f"Removed old file: '{user_id}/{file}'")
+    old = sq_db.get_old_files(user_id=user_id, time=OLD_FILE_THRESHOLD)
+    if old['files']:
+        log.info(f"/login Removing old files for user '{user_id}': {old['files']}")
+
+        for file in old['files']:
+            status = files.delete_file(user_id=user_id, file_name=file)
+            if status:
+                file_id = sq_db.get_file_id_by_name(user_id=user_id, file_name=file)
+                sq_db.mark_file_removed(user_id=user_id, file_id=file_id)
+
+        log.info(f"/login Removing old embeddings for user '{user_id}'")
+        # Add FAISS deletion code here:
+        # for doc in old['embeddings']:
+        # FAISS -> delete doc embedding
+
+    else:
+        log.info(f"/login No old files found for user '{user_id}'")
 
     return {"user_id": user_id}
 
