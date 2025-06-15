@@ -1,12 +1,16 @@
+import requests
 import streamlit as st
 
 import os
+import json
 import time
 import shutil
 from typing import Optional, List, Literal
 
-from log import Logger
-from llm import LC
+import server.logger as logger
+# from .server import logger
+
+from llm import get_response, get_response_stream, get_conversational_rag_response
 from files import check_create_uploads_folder, delete_old_files, save_file, get_pdf_iframe
 
 # ------------------------------------------------------------------------------
@@ -40,13 +44,35 @@ class Message:
 
 
 if "initialized" not in st.session_state:
-    st.session_state.uploads_path = check_create_uploads_folder()
-    delete_old_files(time_in_hours=24)
-
     # Initialize Logger:
-    st.session_state.logger = Logger(name="Streamlit")
-    logger = st.session_state.logger
-    logger.log("Streamlit initialized.", level='info')
+    st.session_state.logger = logger.get_logger(name="Streamlit")
+    log = st.session_state.logger
+    log.info("Streamlit initialized.")
+
+    # Initialize the session with server::
+    st.session_state.server_ip = "http://127.0.0.1:8000"
+    try:
+        resp = requests.post(
+            f"{st.session_state.server_ip}/login",
+            json={"login_id": "dummy", "password": "dummy"}
+        )
+
+        if resp.status_code == 200:
+            session_id = resp.json().get("user_id")
+            st.session_state.session_id = session_id
+            log.info(f"Server session initialized successfully. Session ID: {session_id}")
+        else:
+            st.session_state.session_id = None
+            log.error(f"Failed to initialize server session: {resp.text}")
+            raise Exception("Server did not respond as expected.")
+
+    except requests.RequestException as e:
+        log.error(f"Error initializing server session: {e}")
+        st.error(
+            "Failed to connect to the server. Please check your connection or server status.",
+            icon="🚫"
+        )
+        st.stop()
 
     # Initialize messages:
     st.session_state.chat_history = [
@@ -54,10 +80,8 @@ if "initialized" not in st.session_state:
         # Message("human", "Help me in some thing...")
     ]
 
-    # Langchain:
-    st.session_state.lc = LC(dummy_response=False)
-
-    # User uploads:
+    # User uploads :
+    # This will be filled by one API call, to implement later.
     st.session_state.user_uploads = []
 
     # Set flag to true:
@@ -65,12 +89,11 @@ if "initialized" not in st.session_state:
 
 
 # All variables in session state:
-uploads_path, user_uploads, logger, chat_history, initialized = (
-    st.session_state.uploads_path,
+user_uploads, log, chat_history, server_ip = (
     st.session_state.user_uploads,
     st.session_state.logger,
     st.session_state.chat_history,
-    st.session_state.initialized
+    st.session_state.server_ip
 )
 
 
@@ -130,13 +153,12 @@ def handle_uploaded_files(uploaded_files) -> bool:
 
                     # Done:
                     time.sleep(st.secrets.llm.end_delay)
-                    logger.log(
-                        f"File `{file_name}` processed successfully.", level='info')
+                    log.info(f"File `{file_name}` processed successfully.")
 
                 return True
 
             except Exception as e:
-                logger.log(f"Error processing files: {e}", level='error')
+                log.error(f"Error processing files: {e}")
                 return False
 
 
@@ -144,6 +166,8 @@ def handle_uploaded_files(uploaded_files) -> bool:
 # Sidebar:
 # ------------------------------------------------------------------------------
 
+st.sidebar.toggle(label="Dummy Response Mode",
+                  help="Toggle to use dummy responses instead of actual LLM responses.", value=False, key="dummy_mode")
 
 st.sidebar.subheader("📂 Files")
 
@@ -167,6 +191,8 @@ else:
         else:
             st.sidebar.error("Error loading file. Please try again.", icon="🚫")
 
+with st.sidebar:
+    st.write(st.session_state)
 
 # ------------------------------------------------------------------------------
 # Page content:
@@ -195,8 +221,7 @@ if user_message := st.chat_input(
     new_message = Message(
         type="human",
         content=user_message.text,
-        filenames=[
-            file.name for file in user_message.files] if user_message.files else None
+        filenames=[file.name for file in user_message.files] if user_message.files else None
     )
 
     # Save it to the chat:
@@ -205,23 +230,58 @@ if user_message := st.chat_input(
     write_as_human(new_message.content, new_message.filenames)
 
     # Handle the files if any:
-    if user_message.files:
-        if handle_uploaded_files(user_message.files):
-            st.toast("Files processed successfully!", icon="✅")
-        else:
-            st.error("Error processing files. Please try again.", icon="🚫")
+    # if user_message.files:
+    #     if handle_uploaded_files(user_message.files):
+    #         st.toast("Files processed successfully!", icon="✅")
+    #     else:
+    #         st.error("Error processing files. Please try again.", icon="🚫")
 
     # Get response and write it:
     full = ""
     with st.chat_message(name='assistant', avatar='assistant'):
         with st.spinner("Generating response..."):
-            container = st.empty()
+            resp_holder = st.empty()
 
-            resp = st.session_state.lc.get_response_stream(new_message.content)
-            for chunk in resp:
-                full += chunk
-                trail_char = "█"  # "█", "▌", "|", "•"
-                container.container(border=True).markdown(full + trail_char)
+            # If dummy mode is enabled, use dummy response:
+            if st.session_state.get("dummy_mode", False):
+                response = requests.post(
+                    "http://127.0.0.1:8000/rag",
+                    json={
+                        "query": new_message.content,
+                        "session_id": st.session_state.session_id,
+                        "dummy": True
+                    },
+                    stream=True
+                )
+
+                for chunk in response.iter_content(chunk_size=None):
+                    if chunk:
+                        decoded = chunk.decode("utf-8")
+                        decoded = json.loads(decoded)
+
+                        if decoded["type"] == "content":
+                            full += decoded["data"]
+                        # elif decoded["type"] == "metadata":
+                        #     full += f"```json\n{json.dumps(decoded['data'], indent=2)}\n```\n\n\n"
+                        # elif decoded["type"] == "context":
+                        #     documents.append(decoded['data'])
+                        # else:
+                        #     st.error(decoded['data'])
+                        #     continue
+
+                        resp_holder.container(border=True).markdown(full + "█")
+
+            else:
+                st.snow()
+                st.stop()
+
+                # resp = get_response_stream(new_message.content, dummy=False)
+                # resp = get_conversational_rag_response(new_message.content, session_id="154")
+                # for chunk in resp:
+                #     # st.write(chunk)
+                #     full += chunk
+                #     trail_char = "█"  # "█", "▌", "|", "•"
+                #     resp_holder.container(border=True).markdown(full + trail_char)
 
     st.session_state.chat_history.append(Message("assistant", full))
     st.rerun()
