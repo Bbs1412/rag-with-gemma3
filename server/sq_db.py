@@ -5,7 +5,6 @@ Module for managing SQLite database operations.
 - Each table has col 'available' to mark if the record is still valid or has been deleted.
 """
 
-import json
 import sqlite3
 from typing import List
 from pathlib import Path
@@ -14,7 +13,7 @@ from logger import get_logger
 import pytz
 from datetime import datetime, timedelta
 
-log = get_logger(name="sa_db")
+log = get_logger(name="sq_db")
 DB_PATH = Path("user_data.db")
 IST = pytz.timezone('Asia/Kolkata')
 
@@ -70,6 +69,7 @@ def create_tables():
         """)
 
         conn.commit()
+        log.info("Database tables created successfully.")
 
 
 def add_file(user_id: str, filename: str) -> int:
@@ -181,7 +181,39 @@ def get_old_files(user_id: str, time: int = 12*3600) -> dict[str, List[str]]:
         return {"files": [], "embeddings": []}
 
 
-def remove_file(user_id: str, file_id: int) -> bool:
+def get_file_id_by_name(user_id: str, file_name: str) -> int:
+    """Retrieves the file ID for a given file name and user ID.
+    - Checks only the active files and not old or deleted files.
+
+    Args:
+        user_id (str): The ID of the user who owns the file.
+        file_name (str): The name of the file to search for.
+
+    Returns:
+        int: The ID of the file if found, -1 otherwise.
+    """
+
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT file_id FROM uploads
+                WHERE user_id = ? AND filename = ? AND available = 1
+            """, (user_id, file_name))
+            result = cur.fetchone()
+
+            if result:
+                log.info(f"File '{file_name}' found for user '{user_id}' with ID {result[0]}")
+                return result[0]
+            else:
+                log.warning(f"File '{file_name}' not found for user '{user_id}'")
+                return -1
+
+    except sqlite3.Error as e:
+        log.error(f"SQLite error while retrieving file ID for '{file_name}' and user '{user_id}': {e}")
+        return -1
+
+def mark_file_removed(user_id: str, file_id: int) -> bool:
     """Marks a file as unavailable (deleted) in the database.
 
     Args:
@@ -190,7 +222,15 @@ def remove_file(user_id: str, file_id: int) -> bool:
 
     Returns:
         bool: True if the file was marked as unavailable, False otherwise.
+
+    ## `Warning:`
+        - This function does not physically delete any file or entry
+        - It is just useful for managing / tracking user data
+        - Use this to:
+            1. Get the embedding doc ids and then use them to delete in FAISS
+            2. Get file names and delete files using files module
     """
+
     try:
         with get_connection() as conn:
             cur = conn.cursor()
@@ -254,7 +294,7 @@ if __name__ == "__main__":
         print(f"\t{k}: {v}")
 
     # Tests:
-    
+
     # Addition:
     assert add_embedding(file_id=f1, vector_id="user1_f1_e1") == True, "Embedding addition failed"
     # Old Retrieval:
@@ -265,11 +305,13 @@ if __name__ == "__main__":
 
     # Removal:
     print("\nRemoving files:")
-    assert remove_file(user_id="test_user_2", file_id=f2) == True, "File removal failed for user 1"
+    assert mark_file_removed("test_user_2", f2) == True, "File removal failed for user 1"
+    print("\t - File remove successful for user 2")
+    
     # Check cascade delete:
-    assert get_old_files(user_id="test_user_2", time=1)["embeddings"] == [], "Embeddings not deleted after file removal for user 2"
-    print("\t - Success!")
-
+    emb = get_old_files(user_id="test_user_2", time=1)["embeddings"]
+    assert emb == [], "Embeddings not deleted after file removal for user 2"
+    print("\t - Embeddings deleted after file removal for user 2")
 
     print("\nAll tests passed successfully!")
 
