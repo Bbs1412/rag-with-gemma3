@@ -2,9 +2,9 @@
 # uvicorn server:app --reload
 # Avoid using --reload flag, because, LLMs will keep reloading and system will overheat.
 
-from fastapi import FastAPI, Request, Query
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, File, UploadFile, Form,  Request, Query
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 import os
 import json
@@ -12,7 +12,7 @@ import time
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
-# LLM System Imports:
+# llm system imports:
 from llm_system.core.llm import get_llm, get_output_parser  # Functions
 from llm_system.core.llm import get_dummy_response          # Function
 from llm_system.core.llm import get_dummy_response_stream   # Function
@@ -21,10 +21,12 @@ from llm_system.core.history import HistoryStore            # Class
 from llm_system.chains.rag import build_rag_chain           # Function
 from llm_system import config                               # Constants
 
+import sq_db
+import files
+
 # Types for Type Hinting, Safety, and IDE Support:
 from llm_system.core.llm import T_LLM
 
-# import my logger here:
 import logger
 log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
 
@@ -37,7 +39,7 @@ log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
 async def lifespan(app: FastAPI):
     """Define the lifespan context manager for startup/shutdown"""
 
-    # Startup
+    # [ Startup ]
     app.state.llm_chat = get_llm(
         model_name=config.LLM_CHAT_MODEL_NAME,
         context_size=config.MAX_CONTENT_SIZE,
@@ -63,13 +65,13 @@ async def lifespan(app: FastAPI):
         get_history_fn=app.state.history_store.get_session_history,
     )
 
-    log.info("All LLM components initialized.")
+    log.info("[LifeSpan] All LLM components initialized.")
 
     # Lifespan
     yield
 
-    # Shutdown
-    log.info("Shutting down LLM server...")
+    # [ Shutdown ]
+    log.info("[LifeSpan] Shutting down LLM server...")
     # Add any cleanup part here
     # Like saving vector DB, or shutting down subprocesses
 
@@ -259,7 +261,34 @@ async def login(request: Request, login_request: LoginRequest):
     return {"user_id": user_id}
 
 
-# Will add them later. First focusing on the core RAG functionality and LLM responses.
+# Endpoint to receive file uploads:
+@app.post("/upload")
+async def upload_file(
+    file: UploadFile = File(...),
+    user_id: str = Form(...)
+):
+    try:
+        log.info(f"/upload Received file: {file.filename} from user: {user_id}")
+        filename = file.filename if file.filename else "unknown_file"
+
+        status, message = files.save_file(
+            user_id=user_id,
+            file_value_binary=await file.read(),
+            file_name=filename
+        )
+
+        if status:
+            filename = message
+            sq_db.add_file(user_id=user_id, filename=filename)
+            return JSONResponse(content={"message": filename}, status_code=200)
+        else:
+            log.error(f"/upload File upload failed for user {user_id}: {filename}")
+            return JSONResponse(content={"error": message}, status_code=500)
+
+    except Exception as e:
+        log.error(f"/upload File upload failed: {e}")
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
 
 # ------------------------------------------------------------------------------
 # RAG Chain Endpoint:
@@ -292,8 +321,7 @@ async def rag(request: Request, chat_request: RagChatRequest):
     async def token_streamer():
         try:
             dummy = chat_request.dummy
-            log.info(
-                f"/rag {'dummy' if dummy else 'real'} response requested by '{session_id}'")
+            log.info(f"/rag {'dummy' if dummy else 'real'} response requested by '{session_id}'")
 
             # Start be sending meta data first.
             yield json.dumps({
