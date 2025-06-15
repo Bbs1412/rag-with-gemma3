@@ -4,14 +4,15 @@ import streamlit as st
 import os
 import json
 import time
-import shutil
+from contextlib import contextmanager
 from typing import Optional, List, Literal
 
 import server.logger as logger
 # from .server import logger
 
-from llm import get_response, get_response_stream, get_conversational_rag_response
-from files import check_create_uploads_folder, delete_old_files, save_file, get_pdf_iframe
+# from llm import get_response, get_response_stream, get_conversational_rag_response
+# from files import check_create_uploads_folder, delete_old_files, save_file, get_pdf_iframe
+from files import get_pdf_iframe
 
 # ------------------------------------------------------------------------------
 # Page Config:
@@ -33,6 +34,9 @@ class Message:
     type: Literal['assistant', 'human']
     content: str
     filenames: Optional[List[str]]
+    # List of filenames attached to the message
+    # These names will be original file names, might be diff than actual saved on server
+    # Hence, Chat-UI and sidebar might show same file with different names.
 
     def __init__(
         self, type: Literal['assistant', 'human'],
@@ -122,38 +126,48 @@ def handle_uploaded_files(uploaded_files) -> bool:
         with st.spinner("Processing files..."):
             container = st.empty()
 
-            def write_progress(msg, in_progress=False):
+            @contextmanager
+            def write_progress(msg: str):
+                # Shared variable across multiple steps
                 nonlocal progress_status
-                if in_progress:
-                    curr = progress_status + f"- ⏳ {msg}"
-                else:
-                    progress_status += f"- ✅ {msg}\n"
+
+                # Start with ⏳️ to show progress:
+                curr = progress_status + f"- ⏳ {msg}\n"
+                container.container(border=True).markdown(curr)
+
+                try:
+                    # Do the actual step (indent of 'with')
+                    yield
+
+                    # yield is over means, step is done > Update with ✅
+                    progress_status += f"\n- ✅ {msg}\n"
                     curr = progress_status
 
-                container.container(border=True).markdown(curr)
+                except Exception as e:
+                    progress_status += f"\n- ❌ {msg}: {e}\n"
+                    raise e
+
+                finally:
+                    container.container(border=True).markdown(curr)
 
             try:
                 for i, file in enumerate(uploaded_files):
                     progress_status += f"\n📂 Processing file {i+1} of {len(uploaded_files)}...\n"
 
-                    # Save the uploaded file to the uploads folder:
-                    write_progress("Saving file...", True)
-                    status, file_name = save_file(file.name, file.getvalue())
-                    time.sleep(st.secrets.llm.per_step_delay)
-                    write_progress(f"File `{file_name}` saved successfully.")
+                    # Save file:
+                    with write_progress("Uploading file..."):
+                        file_name = "asda"
+                        time.sleep(st.secrets.llm.per_step_delay)
 
                     # Embed the file:
-                    write_progress("Embedding file...", True)
-                    time.sleep(st.secrets.llm.per_step_delay)
-                    write_progress("Generated embeddings successfully...")
+                    with write_progress("Embedding content..."):
+                        time.sleep(st.secrets.llm.per_step_delay)
 
                     # Add file in session_state:
-                    st.session_state.user_uploads.append(file_name)
-                    time.sleep(st.secrets.llm.end_delay)
-
-                    # Done:
-                    time.sleep(st.secrets.llm.end_delay)
-                    log.info(f"File `{file_name}` processed successfully.")
+                    with write_progress("Finalizing the process..."):
+                        st.session_state.user_uploads.append(file_name)
+                        log.info(f"File `{file_name}` processed successfully.")
+                        time.sleep(st.secrets.llm.end_delay)
 
                 return True
 
@@ -230,11 +244,11 @@ if user_message := st.chat_input(
     write_as_human(new_message.content, new_message.filenames)
 
     # Handle the files if any:
-    # if user_message.files:
-    #     if handle_uploaded_files(user_message.files):
-    #         st.toast("Files processed successfully!", icon="✅")
-    #     else:
-    #         st.error("Error processing files. Please try again.", icon="🚫")
+    if user_message.files:
+        if handle_uploaded_files(user_message.files):
+            st.toast("Files processed successfully!", icon="✅")
+        else:
+            st.error("Error processing files. Please try again.", icon="🚫")
 
     # Get response and write it:
     full = ""
