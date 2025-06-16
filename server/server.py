@@ -6,9 +6,8 @@ from fastapi import FastAPI, File, UploadFile, Form,  Request, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-import os
 import json
-import time
+from typing import Literal
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
@@ -21,11 +20,9 @@ from llm_system.core.history import HistoryStore            # Class
 from llm_system.chains.rag import build_rag_chain           # Function
 from llm_system import config                               # Constants
 
+# Helper Modules:
 import sq_db
 import files
-
-# Types for Type Hinting, Safety, and IDE Support:
-from llm_system.core.llm import T_LLM
 
 import logger
 log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
@@ -36,7 +33,7 @@ log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
 # ------------------------------------------------------------------------------
 
 # UPLOADS_DIR: str = "user_uploads"
-OLD_FILE_THRESHOLD: int = 3600 * 24  # 24 hours in seconds
+OLD_FILE_THRESHOLD: int = 3600 * 1  # 24 hours in seconds
 # OLD_FILE_THRESHOLD: int = 60         # 1 min
 
 
@@ -235,7 +232,7 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
 
 
 # ------------------------------------------------------------------------------
-# File receive and processing endpoints:
+# Initialization End-points:
 # ------------------------------------------------------------------------------
 
 # First end-point to call on client initialization:
@@ -255,9 +252,13 @@ async def login(request: Request, login_request: LoginRequest):
     - Post request expects JSON `{"login_id": "", "password": ""}` structure.
     - Return JSON with `{"user_id": "dummy_user_id"}` structure.
     """
+
+    login_id = login_request.login_id.strip()
+    password = login_request.password.strip()
+
     # For now, we will just return a dummy user_id
     # In future, can implement actual user authentication and return a real user_id
-    user_id = "bot_user"
+    user_id = login_id
     log.info(f"/login requested by '{user_id}'")
 
     # Check if folder exists in UPLOADS_DIR with user_id
@@ -285,12 +286,13 @@ async def login(request: Request, login_request: LoginRequest):
     return {"user_id": user_id}
 
 
+# ------------------------------------------------------------------------------
+# File handling endpoints:
+# ------------------------------------------------------------------------------
+
 # Endpoint to receive file uploads:
 @app.post("/upload")
-async def upload_file(
-    file: UploadFile = File(...),
-    user_id: str = Form(...)
-):
+async def upload_file(file: UploadFile = File(...), user_id: str = Form(...)):
     try:
         log.info(f"/upload Received file: {file.filename} from user: {user_id}")
         filename = file.filename if file.filename else "unknown_file"
@@ -312,6 +314,54 @@ async def upload_file(
     except Exception as e:
         log.error(f"/upload File upload failed: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+# End point to get all the files uploaded by user:
+# This will be called first at initialization, and then after each file upload
+@app.get("/uploads")
+async def get_files(user_id: str = Query(...)):
+    """Endpoint to get all the files uploaded by user.
+    - Get request expects `user_id` as query parameter.
+    - Return JSON with `{"files": ["file1", "file2", ...]}` structure.
+    """
+    log.info(f"/uploads Requested by '{user_id}'")
+    files_list = sq_db.get_user_files(user_id=user_id)
+    return {"files": files_list}
+
+
+# Send pdf iframe based on user and file name:
+# params: type=pdf/ppt/txt, user_id, file_name, num_pages
+class FileIframeRequest(BaseModel):
+    # type: Literal["pdf", "ppt", "txt"]
+    user_id: str
+    file_name: str
+    num_pages: int = 5
+
+
+@app.post("/iframe")
+async def get_file_iframe(file_request: FileIframeRequest):
+    """Endpoint to get the iframe for the file.
+    - Post request expects JSON `{"user_id": "", "file_name": "", "num_pages": 5}` structure.
+    - Return JSON with `{"iframe": "<iframe>...</iframe>"}` structure.
+    """
+
+    user_id = file_request.user_id.strip()
+    file_name = file_request.file_name.strip()
+    num_pages = file_request.num_pages
+
+    log.info(f"/iframe Requested by '{user_id}' for file '{file_name}'")
+
+    # Get the iframe for the requested file
+    status, message = files.get_pdf_iframe(
+        user_id=user_id,
+        file_name=file_name,
+        num_pages=num_pages
+    )
+
+    if status:
+        return JSONResponse(content={"iframe": message}, status_code=200)
+    else:
+        return JSONResponse(content={"error": message}, status_code=404)
 
 
 # ------------------------------------------------------------------------------

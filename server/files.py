@@ -103,123 +103,75 @@ def save_file(user_id: str, file_value_binary: bytes, file_name: str) -> Tuple[b
         return False, "Error saving file!"
 
 
+def get_pdf_iframe(user_id: str, file_name: str, num_pages: int = 5) -> Tuple[bool, str]:
+    """Return first n pages of asked pdf in an iframe.
+    
+    Args:
+        user_id (str): The name of the user whose file is to be loaded.
+        file_name (str): The name of the PDF file to be loaded.
+        num_pages (int): The number of pages to include in the iframe.
+    Returns:
+        Tuple[bool, str]: A tuple containing a success flag and the HTML iframe string or an error message.
+    """
+    log.info(f"Loading PDF: {user_id}/{file_name}")
+    abs_path = os.path.join(UPLOADS_PATH, user_id, file_name)
+    print(f"Absolute path: {abs_path}")
+
+    if not os.path.isfile(abs_path):
+        log.error(f"File not found at {abs_path}!")
+        return False, "File not found!"
+
+    try:
+        # Open original PDF
+        doc = fitz.open(abs_path)
+
+        # Create new PDF in memory
+        new_pdf = fitz.open()
+        for i in range(min(num_pages, len(doc))):
+            new_pdf.insert_pdf(doc, from_page=i, to_page=i)
+
+        # Write to in-memory buffer
+        pdf_buffer = BytesIO()
+        new_pdf.save(pdf_buffer)
+        new_pdf.close()
+        doc.close()
+
+        # Base64 encode the trimmed version
+        base64_pdf = base64.b64encode(pdf_buffer.getvalue()).decode("utf-8")
+
+        # Close the buffer
+        pdf_buffer.close()
+        log.info(f"PDF iframe loaded successfully: {user_id}/{file_name}")
+
+        return True, f"""
+            <iframe
+                src="data:application/pdf;base64,{base64_pdf}#toolbar=0&navpanes=0&scrollbar=1&page=1&view=FitH"
+                width=100%
+                height=300rem
+                type="application/pdf"
+            ></iframe>
+        """
+
+    except Exception as e:
+        log.error(f"Error loading PDF {file_name} for user {user_id}: {repr(e)}")
+        return False, "Some error occurred while loading the PDF!"
+
+
 if __name__ == "__main__":
+    user = "test_user"
+
     # Example usage
     check_create_uploads_folder()
 
+    # Create a user uploads folder
+    create_user_uploads_folder(user)
+
     # Save a sample file
     sample_file_content = b"This is a sample file content."
-    print(
-        save_file("test_user", sample_file_content, "sample.a.b c.d.txt")
-    )
+    print(save_file(user, sample_file_content, "sample.a.b c.d.pdf"))
 
-# ------------------------------------------------------------------------------
-# Old Code Snippets
-# ------------------------------------------------------------------------------
-
-# def delete_old_files(time_in_hours: int = 24) -> None:
-#     """Delete files older than the specified time in hours."""
-#     current_time = time.time()
-#     cutoff_time = current_time - (time_in_hours * 3600)
-#     old_files = []
-
-#     for file in os.listdir(UPLOADS_PATH):
-#         full_path = os.path.join(UPLOADS_PATH, file)
-#         creation_time = os.path.getctime(full_path)
-
-#         if creation_time < cutoff_time:
-#             old_files.append(full_path)
-
-#     if old_files:
-#         deleted_files, failed_files = [], []
-#         for file in old_files:
-#             try:
-#                 os.remove(file)
-#                 deleted_files.append(file)
-#             except Exception as e:
-#                 failed_files.append(file + f" (Error: {repr(e)})")
-
-#         if deleted_files:
-#             log.info(f"Deleted files: [{', '.join(deleted_files)}]")
-#         if failed_files:
-#             log.error(f"Failed to delete files: {'; '.join(failed_files)}")
+    # Get PDF iframe:
+    file = input(f"Paste one file here, `{UPLOADS_PATH}/{user}/` and paste just the file name: ")
+    print(get_pdf_iframe(user, file, num_pages=1))
 
 
-# def save_file(name: str, file_value_binary: bytes) -> Tuple[bool, str]:
-#     """Save the uploaded file to the specified directory."""
-
-#     try:
-#         new_file_name = f"{"_".join(name.split(".")[:-1])}.{name.split(".")[-1]}"
-
-#         with open(os.path.join('uploads', new_file_name), "wb") as f:
-#             f.write(file_value_binary)
-#             log.info(f"File saved: {new_file_name}")
-#         return True, new_file_name
-
-#     except Exception as e:
-#         log.error(f"Error saving file: {e}")
-#         return False, "Error saving file!"
-
-
-# def get_pdf_iframe(abs_path: str):
-#     if not os.path.isfile(abs_path):
-#         st.error(f"File not found: {abs_path}")
-#         return
-
-#     with open(abs_path, "rb") as f:
-#         base64_pdf = base64.b64encode(f.read()).decode('utf-8')
-
-#     return f"""
-#     <iframe
-#         src="data:application/pdf;base64,{base64_pdf}#toolbar=0&navpanes=0&scrollbar=1&page=1&view=FitH"
-#         width=100%
-#         height=300rem
-#         type="application/pdf"
-#     ></iframe>
-#     """
-
-
-# def get_pdf_iframe(abs_path: str) -> Tuple[bool, str]:
-#     """Return first 10 pages of asked pdf in an iframe."""
-#     logger.log(f"Loading PDF: {abs_path}", level='info')
-
-#     if not os.path.isfile(abs_path):
-#         logger.log(f"File not found at {abs_path}!", level='error')
-#         return False, "File not found!"
-
-#     try:
-#         # Open original PDF
-#         doc = fitz.open(abs_path)
-
-#         # Create new PDF in memory
-#         new_pdf = fitz.open()
-#         for i in range(min(5, len(doc))):
-#             new_pdf.insert_pdf(doc, from_page=i, to_page=i)
-
-#         # Write to in-memory buffer
-#         pdf_buffer = BytesIO()
-#         new_pdf.save(pdf_buffer)
-#         new_pdf.close()
-#         doc.close()
-
-#         # Base64 encode the trimmed version
-#         base64_pdf = base64.b64encode(pdf_buffer.getvalue()).decode("utf-8")
-
-#         # Close the buffer
-#         pdf_buffer.close()
-
-#         logger.log(f"PDF trimmed and encoded successfully.", level='info')
-
-#         return True, f"""
-#             <iframe
-#                 src="data:application/pdf;base64,{base64_pdf}#toolbar=0&navpanes=0&scrollbar=1&page=1&view=FitH"
-#                 width=100%
-#                 height=300rem
-#                 type="application/pdf"
-#             ></iframe>
-#         """
-
-#     except Exception as e:
-#         # st.error(f"Error loading PDF: {e}")
-#         logger.log(f"Error loading PDF: {e}", level='error')
-#         return False, "Some error occurred while loading the PDF!"
