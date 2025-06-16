@@ -35,6 +35,10 @@ VERIFY_EMB_CONNECTION: bool = False
 
 # Document Chunking properties:
 DOC_CHAR_LIMIT: int = 2000                              # Char limit for each doc.
+DOC_OVERLAP_NO: int = 250                               # Char limit for chunk overlap.
+
+
+# Document Retrieval properties:
 DOC_TOKEN_SIZE: int = DOC_CHAR_LIMIT // 4               # Appx number of tokens in each doc.
 DOCS_NUM_COUNT: int = 3000 // DOC_TOKEN_SIZE            # Max num of docs to retrieve.
 
