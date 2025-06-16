@@ -2,7 +2,7 @@
 # uvicorn server:app --reload
 # Avoid using --reload flag, because, LLMs will keep reloading and system will overheat.
 
-from fastapi import FastAPI, File, UploadFile, Form,  Request, Query
+from fastapi import FastAPI, File, UploadFile, Form, Request, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,6 +19,7 @@ from llm_system.core.database import VectorDB               # Class
 from llm_system.core.history import HistoryStore            # Class
 from llm_system.chains.rag import build_rag_chain           # Function
 from llm_system import config                               # Constants
+from llm_system.core.ingestion import ingest_file           # Function
 
 # Helper Modules:
 import sq_db
@@ -34,7 +35,7 @@ log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
 
 # UPLOADS_DIR: str = "user_uploads"
 OLD_FILE_THRESHOLD: int = 3600 * 1  # 24 hours in seconds
-# OLD_FILE_THRESHOLD: int = 60         # 1 min
+OLD_FILE_THRESHOLD: int = 60         # 1 min
 
 
 # ------------------------------------------------------------------------------
@@ -314,6 +315,44 @@ async def upload_file(file: UploadFile = File(...), user_id: str = Form(...)):
     except Exception as e:
         log.error(f"/upload File upload failed: {e}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+# Endpoint to embed the uploaded file:
+# takes user_id and file_name as input
+class EmbedRequest(BaseModel):
+    user_id: str
+    file_name: str
+
+
+@app.post("/embed")
+async def embed_file(embed_request: EmbedRequest, request: Request):
+    """Endpoint to embed the uploaded file.
+    - Post request expects JSON `{"user_id": "", "file_name": ""}` structure.
+    - Return JSON with `{"status": "success"}` or `{"error": "message"}` structure.
+    """
+    user_id = embed_request.user_id.strip()
+    file_name = embed_request.file_name.strip()
+
+    log.info(f"/embed Requested by '{user_id}' for file '{file_name}'")
+
+    # Call the ingest_file function to process the file
+    status, doc_ids, message = ingest_file(
+        user_id=user_id,
+        file_path=files.get_file_path(user_id=user_id, file_name=file_name),
+        vectorstore=request.app.state.vector_db,
+        embeddings=request.app.state.vector_db.get_embeddings()
+    )
+
+    if status:
+        file_id = sq_db.get_file_id_by_name(user_id=user_id, file_name=file_name)
+        for vid in doc_ids:
+            sq_db.add_embedding(file_id=file_id, vector_id=vid)
+
+        log.info(f"/embed Embedding completed for '{user_id}' and file '{file_name}'")
+        return JSONResponse(content={"status": "success"}, status_code=200)
+    else:
+        log.error(f"/embed Embedding failed for '{user_id}' and file '{file_name}': {message}")
+        return JSONResponse(content={"error": message}, status_code=500)
 
 
 # End point to get all the files uploaded by user:
