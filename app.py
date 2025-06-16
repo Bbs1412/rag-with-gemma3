@@ -118,33 +118,66 @@ def write_as_human(text: str, filenames: Optional[List[str]] = None):
             st.caption(f"🔗 Attached file(s): {files}.")
 
 
-def upload_file(uploaded_file) -> bool:
+def upload_file(uploaded_file) -> tuple[bool, str]:
     """Upload the st attachment/uploaded file to the server and save it.
     Args:
         uploaded_file: The file object uploaded by the user.
     Returns:
-        bool: True if the file was uploaded successfully, False otherwise.
+        tuple: A tuple containing:
+            - bool: True if the file was uploaded successfully, False otherwise.
+            - str: The server file name or error message.
     """
 
     try:
-        # Read file as bytes
+        # POST to FastAPI
         files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
         data = {"user_id": st.session_state.session_id}
-
-        # POST to FastAPI
         response = requests.post(f"{server_ip}/upload", files=files, data=data)
 
         if response.status_code == 200:
-            log.info(f"File `{uploaded_file.name}` uploaded successfully for user `{user_id}`.")
-            return True
+            message = response.json().get("message", "")
+            log.info(f"File `{message}` uploaded successfully for user `{user_id}`.")
+            return True, message
         else:
+            message = response.json().get("error", "Unknown error")
             log.error(
-                f"Failed to upload file `{uploaded_file.name}`: {response.text} for user `{user_id}`.")
-            return False
+                f"Failed to upload file `{uploaded_file.name}`: {message} for user `{user_id}`.")
+            return False, message
 
     except Exception as e:
         log.error(f"Error uploading file `{uploaded_file.name}`: {e} for user `{user_id}`.")
-        return False
+        return False, str(e)
+
+
+def embed_file(file_name: str) -> tuple[bool, str]:
+    """Embed the content of the file into the RAG system.
+    Args:
+        file_name: The name of the file to embed.
+    Returns:
+        tuple: A tuple containing:
+            - bool: True if the file was embedded successfully, False otherwise.
+            - str: Success message or error message.
+    """
+    try:
+        response = requests.post(
+            f"{server_ip}/embed",
+            json={
+                "user_id": st.session_state.session_id,
+                "file_name": file_name
+            }
+        )
+
+        if response.status_code == 200:
+            log.info(f"File `{file_name}` embedded successfully for user `{user_id}`.")
+            return True, response.json().get("message", "File embedded successfully.")
+        else:
+            error_message = response.json().get("error", "Unknown error")
+            log.error(f"Failed to embed file `{file_name}`: {error_message} for user `{user_id}`.")
+            return False, error_message
+
+    except Exception as e:
+        log.error(f"Error embedding file `{file_name}`: {e} for user `{user_id}`.")
+        return False, str(e)
 
 
 def handle_uploaded_files(uploaded_files) -> bool:
@@ -184,17 +217,21 @@ def handle_uploaded_files(uploaded_files) -> bool:
 
                     # Upload file:
                     with write_progress("Uploading file..."):
-                        if not upload_file(file):
+                        status, message = upload_file(file)
+                        if not status:
                             raise RuntimeError(f"Upload failed for file: {file.name}")
+                        server_file_name = message
                         time.sleep(st.secrets.llm.per_step_delay)
 
                     # Embed the file:
                     with write_progress("Embedding content..."):
+                        status, message = embed_file(server_file_name)
+                        if not status:
+                            raise RuntimeError(f"Embedding failed for file: {file.name}")
                         time.sleep(st.secrets.llm.per_step_delay)
 
                     # Any last steps like finalizing or cleanup:
                     with write_progress("Finalizing the process..."):
-
                         # Update data with latest user_upload
                         st.session_state.user_uploads = requests.get(
                             f"{st.session_state.server_ip}/uploads",
@@ -236,9 +273,6 @@ def get_iframe(file_name: str, num_pages: int = 5) -> tuple[bool, str]:
 # Sidebar:
 # ------------------------------------------------------------------------------
 
-st.sidebar.toggle(label="Dummy Response Mode", value=False, key="dummy_mode",
-                  help="Toggle to use dummy responses instead of actual LLM responses.")
-
 st.sidebar.subheader("📂 Files")
 
 selected_file = st.sidebar.selectbox(
@@ -260,6 +294,10 @@ else:
             st.sidebar.error(f"Error: **{content}**", icon="🚫")
 
 
+st.sidebar.divider()
+st.sidebar.toggle(label="Dummy Response Mode", value=False, key="dummy_mode",
+                  help="Toggle to use dummy responses instead of actual LLM responses.")
+
 # with st.sidebar:
 #     st.write(st.session_state)
 
@@ -280,10 +318,10 @@ for message in st.session_state.chat_history:
 
 
 if user_message := st.chat_input(
-    placeholder="Enter any queries here...",
+    placeholder="Enter any queries here... You can also attach [pdf, txt, md] files.",
     max_chars=1000,
     accept_file='multiple',
-    file_type=['pdf'],
+    file_type=['pdf', 'txt', 'md'],
     # on_submit=submit_handler
 ):
     # Create Message object from the user input:
