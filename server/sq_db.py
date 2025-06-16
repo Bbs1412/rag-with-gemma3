@@ -132,6 +132,34 @@ def add_embedding(file_id: int, vector_id: str) -> bool:
         return False
 
 
+def get_user_files(user_id: str) -> List[str]:
+    """Retrieves all files uploaded by a user.
+    - Only retrieves files that are marked as available (not deleted).
+    
+    Args:
+        user_id (str): The ID of the user whose files are being queried.
+
+    Returns:
+        List[str]: A list of file names uploaded by the user.
+    """
+
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT filename FROM uploads
+                WHERE user_id = ? AND available = 1
+            """, (user_id,))
+            files = cur.fetchall()
+
+            log.info(f"Retrieved {len(files)} files for user '{user_id}'")
+            return [file[0] for file in files]
+
+    except sqlite3.Error as e:
+        log.error(f"SQLite error while retrieving files for user '{user_id}': {e}")
+        return []
+    
+
 def get_old_files(user_id: str, time: int = 12*3600) -> dict[str, List[str]]:
     """Retrieves files uploaded by a user that are older than a specified time.
 
@@ -210,8 +238,10 @@ def get_file_id_by_name(user_id: str, file_name: str) -> int:
                 return -1
 
     except sqlite3.Error as e:
-        log.error(f"SQLite error while retrieving file ID for '{file_name}' and user '{user_id}': {e}")
+        log.error(
+            f"SQLite error while retrieving file ID for '{file_name}' and user '{user_id}': {e}")
         return -1
+
 
 def mark_file_removed(user_id: str, file_id: int) -> bool:
     """Marks a file as unavailable (deleted) in the database.
@@ -307,7 +337,7 @@ if __name__ == "__main__":
     print("\nRemoving files:")
     assert mark_file_removed("test_user_2", f2) == True, "File removal failed for user 1"
     print("\t - File remove successful for user 2")
-    
+
     # Check cascade delete:
     emb = get_old_files(user_id="test_user_2", time=1)["embeddings"]
     assert emb == [], "Embeddings not deleted after file removal for user 2"

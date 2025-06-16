@@ -1,18 +1,13 @@
-import requests
-import streamlit as st
-
-import os
 import json
 import time
+import requests
+import streamlit as st
 from contextlib import contextmanager
 from typing import Optional, List, Literal
 
 import server.logger as logger
 # from .server import logger
 
-# from llm import get_response, get_response_stream, get_conversational_rag_response
-# from files import check_create_uploads_folder, delete_old_files, save_file, get_pdf_iframe
-from files import get_pdf_iframe
 
 # ------------------------------------------------------------------------------
 # Page Config:
@@ -58,7 +53,8 @@ if "initialized" not in st.session_state:
     try:
         resp = requests.post(
             f"{st.session_state.server_ip}/login",
-            json={"login_id": "dummy", "password": "dummy"}
+            # json={"login_id": "bot_user", "password": "dummy"}
+            json={"login_id": "dev_user", "password": "dummy"}
         )
 
         if resp.status_code == 200:
@@ -84,16 +80,19 @@ if "initialized" not in st.session_state:
         # Message("human", "Help me in some thing...")
     ]
 
-    # User uploads :
-    # This will be filled by one API call, to implement later.
-    st.session_state.user_uploads = []
+    # User uploads (Older, but less than threshold):
+    st.session_state.user_uploads = requests.get(
+        f"{st.session_state.server_ip}/uploads",
+        params={"user_id": st.session_state.session_id}
+    ).json().get("files", [])
 
     # Set flag to true:
     st.session_state.initialized = True
 
 
 # All variables in session state:
-user_uploads, log, chat_history, server_ip = (
+user_id, user_uploads, log, chat_history, server_ip = (
+    st.session_state.session_id,
     st.session_state.user_uploads,
     st.session_state.logger,
     st.session_state.chat_history,
@@ -119,18 +118,49 @@ def write_as_human(text: str, filenames: Optional[List[str]] = None):
             st.caption(f"🔗 Attached file(s): {files}.")
 
 
+def upload_file(uploaded_file) -> bool:
+    """Upload the st attachment/uploaded file to the server and save it.
+    Args:
+        uploaded_file: The file object uploaded by the user.
+    Returns:
+        bool: True if the file was uploaded successfully, False otherwise.
+    """
+
+    try:
+        # Read file as bytes
+        files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
+        data = {"user_id": st.session_state.session_id}
+
+        # POST to FastAPI
+        response = requests.post(f"{server_ip}/upload", files=files, data=data)
+
+        if response.status_code == 200:
+            log.info(f"File `{uploaded_file.name}` uploaded successfully for user `{user_id}`.")
+            return True
+        else:
+            log.error(
+                f"Failed to upload file `{uploaded_file.name}`: {response.text} for user `{user_id}`.")
+            return False
+
+    except Exception as e:
+        log.error(f"Error uploading file `{uploaded_file.name}`: {e} for user `{user_id}`.")
+        return False
+
+
 def handle_uploaded_files(uploaded_files) -> bool:
+    """Handle the uploaded files by uploading them to the server and embedding their content."""
     progress_status = ""
 
     with st.chat_message(name='assistant', avatar='./assets/settings_3.png'):
         with st.spinner("Processing files..."):
             container = st.empty()
 
+            # Found out later that all this thing can be done with st.status() as status:
+            # But, it does not allow that much customization.
             @contextmanager
             def write_progress(msg: str):
                 # Shared variable across multiple steps
                 nonlocal progress_status
-
                 # Start with ⏳️ to show progress:
                 curr = progress_status + f"- ⏳ {msg}\n"
                 container.container(border=True).markdown(curr)
@@ -138,35 +168,40 @@ def handle_uploaded_files(uploaded_files) -> bool:
                 try:
                     # Do the actual step (indent of 'with')
                     yield
-
                     # yield is over means, step is done > Update with ✅
                     progress_status += f"\n- ✅ {msg}\n"
                     curr = progress_status
-
                 except Exception as e:
                     progress_status += f"\n- ❌ {msg}: {e}\n"
                     raise e
-
                 finally:
                     container.container(border=True).markdown(curr)
 
             try:
                 for i, file in enumerate(uploaded_files):
                     progress_status += f"\n📂 Processing file {i+1} of {len(uploaded_files)}...\n"
+                    log.info(f"Processing file: {file.name}")
 
-                    # Save file:
+                    # Upload file:
                     with write_progress("Uploading file..."):
-                        file_name = "asda"
+                        if not upload_file(file):
+                            raise RuntimeError(f"Upload failed for file: {file.name}")
                         time.sleep(st.secrets.llm.per_step_delay)
 
                     # Embed the file:
                     with write_progress("Embedding content..."):
                         time.sleep(st.secrets.llm.per_step_delay)
 
-                    # Add file in session_state:
+                    # Any last steps like finalizing or cleanup:
                     with write_progress("Finalizing the process..."):
-                        st.session_state.user_uploads.append(file_name)
-                        log.info(f"File `{file_name}` processed successfully.")
+
+                        # Update data with latest user_upload
+                        st.session_state.user_uploads = requests.get(
+                            f"{st.session_state.server_ip}/uploads",
+                            params={"user_id": st.session_state.session_id}
+                        ).json().get("files", [])
+
+                        log.info(f"File `{file.name}` processed successfully.")
                         time.sleep(st.secrets.llm.end_delay)
 
                 return True
@@ -176,12 +211,33 @@ def handle_uploaded_files(uploaded_files) -> bool:
                 return False
 
 
+@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
+def get_iframe(file_name: str, num_pages: int = 5) -> tuple[bool, str]:
+    """Get the iframe HTML for the PDF file."""
+    try:
+        response = requests.post(
+            f"{st.session_state.server_ip}/iframe",
+            json={
+                "user_id": st.session_state.session_id,
+                "file_name": file_name,
+                "num_pages": num_pages
+            },
+        )
+        if response.status_code == 200:
+            return True, response.json().get("iframe", "")
+        else:
+            return False, response.json().get("error", "Unknown error")
+    except requests.RequestException as e:
+        log.error(f"Error getting iframe for {file_name}: {e}")
+        return False, str(e)
+
+
 # ------------------------------------------------------------------------------
 # Sidebar:
 # ------------------------------------------------------------------------------
 
-st.sidebar.toggle(label="Dummy Response Mode",
-                  help="Toggle to use dummy responses instead of actual LLM responses.", value=False, key="dummy_mode")
+st.sidebar.toggle(label="Dummy Response Mode", value=False, key="dummy_mode",
+                  help="Toggle to use dummy responses instead of actual LLM responses.")
 
 st.sidebar.subheader("📂 Files")
 
@@ -197,16 +253,15 @@ if not st.session_state.user_uploads:
 else:
     button = st.sidebar.button("Show Preview")
     if selected_file and button:
-        file = os.path.join(uploads_path, selected_file)
-        status, content = get_pdf_iframe(file)
-
+        status, content = get_iframe(selected_file)
         if status:
             st.sidebar.markdown(content, unsafe_allow_html=True)
         else:
-            st.sidebar.error("Error loading file. Please try again.", icon="🚫")
+            st.sidebar.error(f"Error: **{content}**", icon="🚫")
 
-with st.sidebar:
-    st.write(st.session_state)
+
+# with st.sidebar:
+#     st.write(st.session_state)
 
 # ------------------------------------------------------------------------------
 # Page content:
