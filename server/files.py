@@ -105,7 +105,7 @@ def save_file(user_id: str, file_value_binary: bytes, file_name: str) -> Tuple[b
 
 def get_pdf_iframe(user_id: str, file_name: str, num_pages: int = 5) -> Tuple[bool, str]:
     """Return first n pages of asked pdf in an iframe.
-    
+
     Args:
         user_id (str): The name of the user whose file is to be loaded.
         file_name (str): The name of the PDF file to be loaded.
@@ -113,9 +113,13 @@ def get_pdf_iframe(user_id: str, file_name: str, num_pages: int = 5) -> Tuple[bo
     Returns:
         Tuple[bool, str]: A tuple containing a success flag and the HTML iframe string or an error message.
     """
+    ext = file_name.split('.')[-1].lower()
+    if ext != 'pdf':
+        log.info(f"Requested iframe for non-PDF file: {file_name}")
+        return False, "Unsupported File Format. [Only PDF previews are supported for now, Others will be added soon.]"
+
     log.info(f"Loading PDF: {user_id}/{file_name}")
     abs_path = os.path.join(UPLOADS_PATH, user_id, file_name)
-    print(f"Absolute path: {abs_path}")
 
     if not os.path.isfile(abs_path):
         log.error(f"File not found at {abs_path}!")
@@ -157,6 +161,18 @@ def get_pdf_iframe(user_id: str, file_name: str, num_pages: int = 5) -> Tuple[bo
         return False, "Some error occurred while loading the PDF!"
 
 
+def get_file_path(user_id: str, file_name: str) -> str:
+    """Get the absolute path of a user's file in the uploads directory.
+
+    Args:
+        user_id (str): The name of the user whose file path is to be retrieved.
+        file_name (str): The name of the file.
+    Returns:
+        str: The absolute path of the file.
+    """
+    return os.path.join(UPLOADS_PATH, user_id, file_name)
+
+
 if __name__ == "__main__":
     user = "test_user"
 
@@ -173,5 +189,3 @@ if __name__ == "__main__":
     # Get PDF iframe:
     file = input(f"Paste one file here, `{UPLOADS_PATH}/{user}/` and paste just the file name: ")
     print(get_pdf_iframe(user, file, num_pages=1))
-
-
