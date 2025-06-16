@@ -1,3 +1,5 @@
+"""Contains the prompt templates for chat and summarization tasks."""
+
 from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder
 
 from logger import get_logger

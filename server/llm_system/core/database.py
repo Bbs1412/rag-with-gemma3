@@ -1,8 +1,17 @@
-# llm_system/core/database.py
+""" Database Module for LLM System
+- Contains the `VectorDB` class to manage a vector database using FAISS and Ollama embeddings.
+- Provides methods to initialize the database, retrieve embeddings, and perform similarity searches.
+"""
+
 from typing import Tuple, Optional
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
+
+# For type hinting
+from langchain_core.embeddings import Embeddings
+from langchain_core.vectorstores import VectorStore
+from langchain_core.vectorstores import VectorStoreRetriever
 
 from logger import get_logger
 log = get_logger(name="core_database")
@@ -65,14 +74,14 @@ class VectorDB:
 
         log.info(f"Created retriever with k={retriever_num_docs}.")
 
-    def get_embeddings(self):
-        log.info("Returning the Ollama embeddings model.")
+    def get_embeddings(self) -> Embeddings:
+        log.info("Returning the Embeddings model instance.")
         return self.embeddings
 
-    def get_vector_store(self):
-        log.info("Returning the FAISS vector store.")
+    def get_vector_store(self) -> VectorStore:
+        log.info("Returning the FAISS vector store instance.")
         return self.db
 
-    def get_retriever(self):
+    def get_retriever(self) -> VectorStoreRetriever:
         log.info("Returning the retriever for similarity search.")
         return self.retriever

@@ -1,0 +1,1 @@
+"""Main FastAPI app for the RAG (Retrieval-Augmented Generation) system."""

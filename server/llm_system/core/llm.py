@@ -1,3 +1,8 @@
+"""LLM system module for managing language model interactions.
+This module provides functions to initialize and manage LLM models, and Parsers
+Also contains dummy response generators for testing purposes.
+"""
+
 from time import sleep
 from random import choice
 from typing import Generator
