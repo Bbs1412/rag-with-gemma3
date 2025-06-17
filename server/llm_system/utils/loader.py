@@ -52,6 +52,19 @@ def load_file(user_id: str, file_path: str) -> tuple[bool, List[Document], str]:
     # Add user metadata to each doc:
     for doc in file_content:
         doc.metadata['user_id'] = user_id
+        # Since i am exposing the retrieved docs to UI
+        # Hide full server file path if its there:
+        if 'file_path' in doc.metadata:
+            doc.metadata['file_path'] = doc.metadata['file_path'].split('/')[-1]
+        
+        if 'source' in doc.metadata:
+            # If it is not local file, keep source as is:
+            if "www." in doc.metadata['source'] or "http" in doc.metadata['source']:
+                continue
+            # If it is local file, keep only the file name:
+            else:
+                if '/' in doc.metadata['source']:
+                    doc.metadata['source'] = doc.metadata['source'].split('/')[-1]
 
     if not file_content:
         log.error(f"No content found in the file: {file_path}")

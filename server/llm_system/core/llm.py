@@ -30,7 +30,8 @@ def get_llm(model_name: str, context_size: int,
     """
 
     log.info(f"Initializing LLM(model={model_name}, ctx_size={context_size}, temp={temperature})")
-    model = ChatOllama(model=model_name, num_ctx=context_size, temperature=temperature)
+    model = ChatOllama(model=model_name, num_ctx=context_size,
+                       temperature=temperature, keep_alive=-1)
 
     if verify_connection:
         try:
