@@ -8,6 +8,7 @@ from typing import Tuple, Optional
 from langchain_core.documents import Document
 from langchain_ollama import OllamaEmbeddings
 from langchain_community.vectorstores import FAISS
+from langchain_core.runnables import ConfigurableField
 
 # For type hinting
 from langchain_core.embeddings import Embeddings
@@ -44,8 +45,8 @@ class VectorDB:
         persist_path: Optional[str] = VECTOR_DB_PERSIST_DIR,
         index_name: Optional[str] = VECTOR_DB_INDEX_NAME
     ):
-        self.persist_path = persist_path
-        self.index_name = index_name
+        self.persist_path: Optional[str] = persist_path
+        self.index_name: Optional[str] = index_name
 
         log.info(
             f"Initializing VectorDB with embeddings='{embed_model}', path='{persist_path}', k={retriever_num_docs} docs."
@@ -91,10 +92,45 @@ class VectorDB:
             self.db = FAISS.from_documents([dummy_doc], embedding=self.embeddings)
             log.info("Created a new FAISS vector store in memory with a dummy document.")
 
-        self.retriever = self.db.as_retriever(
-            search_type="similarity", search_kwargs={"k": retriever_num_docs})
+        # self.retriever = self.db.as_retriever(
+        #     search_type="similarity",
+        #     search_kwargs={"k": retriever_num_docs, "filter":{"user_id": "public"}},
+        # )
+        # log.info(f"Created retriever with k={retriever_num_docs}.")
 
-        log.info(f"Created retriever with k={retriever_num_docs}.")
+        # Simple retriever does not have way to pass some filters with rag_chain.invoke()
+        # Basically no way to pass args at runtime
+        # Hence, using configurable retriever:
+        # https://github.com/langchain-ai/langchain/issues/9195#issuecomment-2095196865
+        retriever = self.db.as_retriever()
+        configurable_retriever = retriever.configurable_fields(
+            search_kwargs=ConfigurableField(
+                id="search_kwargs",
+                name="Search Kwargs",
+                description="The search kwargs to use",
+            )
+        )
+
+        # call it like this:
+        # configurable_retriever.invoke(
+        #     input="What is the Sun?",
+        #     config={"configurable": {
+        #         "search_kwargs": {
+        #             "k": 5,
+        #             "search_type": "similarity",
+        #             # And here comes the main thing:
+        #             "filter": {
+        #                 "$or": [
+        #                     {"user_id": "curious_cat"},
+        #                     {"user_id": "public"}
+        #                 ]
+        #             },
+        #         }
+        #     }}
+        # )
+
+        self.retriever = configurable_retriever
+        log.info(f"Created configurable retriever.")
 
     def get_embeddings(self) -> Embeddings:
         log.info("Returning the Embeddings model instance.")
@@ -106,7 +142,7 @@ class VectorDB:
 
     def get_retriever(self) -> VectorStoreRetriever:
         log.info("Returning the retriever for similarity search.")
-        return self.retriever
+        return self.retriever # type: ignore[return-value]
 
     def save_db_to_disk(self) -> bool:
         """Saves the current vector store to disk if a persist path is set.
@@ -117,8 +153,12 @@ class VectorDB:
         if self.persist_path and self.index_name:
             try:
                 # Somehow, loading needs 'index.faiss', but saving needs only 'index'.
-                index_base_name = self.index_name[:-
-                                                  6] if self.index_name.endswith('.faiss') else self.index_name
+                # index_base_name = self.index_name[:-6] if self.index_name.endswith('.faiss') else self.index_name
+                if self.index_name.endswith('.faiss'):
+                    index_base_name = self.index_name[:-6]
+                else:
+                    index_base_name = self.index_name
+
                 self.db.save_local(self.persist_path, index_name=index_base_name)
                 log.info(f"Vector store saved to disk at '{self.persist_path}/{self.index_name}'.")
                 return True

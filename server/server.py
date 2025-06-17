@@ -498,9 +498,26 @@ async def rag(request: Request, chat_request: RagChatRequest):
                     }) + "\n"
 
             else:
+                # Search kwargs for the configurable retriever:
+                search_kwargs = {
+                    "k": 5,
+                    "search_type": "similarity",
+                    "filter": {
+                        "$or": [
+                            {"user_id": session_id},
+                            {"user_id": "public"}
+                        ]
+                    },
+                }
+
                 async for chunk in rag_chain.astream(
                     input={"input": chat_request.query},
-                    config={"configurable": {"session_id": session_id}}
+                    config={
+                        "configurable": {
+                            "session_id": session_id,
+                            "search_kwargs": search_kwargs
+                        }
+                    }
                 ):
                     if await request.is_disconnected():
                         log.warning(f"/rag client disconnected for '{session_id}'")
@@ -519,10 +536,10 @@ async def rag(request: Request, chat_request: RagChatRequest):
                                 log.warning(f"/rag client disconnected for '{session_id}'")
                                 break
 
-                            if "user_id" in document.metadata:
-                                # Hide user_id from metadata
-                                document.metadata.pop("user_id")
-                                
+                            # Hide user_id from metadata on UI
+                            # if "user_id" in document.metadata:
+                            #     document.metadata.pop("user_id")
+
                             yield json.dumps({
                                 "type": "context",
                                 "data": {
