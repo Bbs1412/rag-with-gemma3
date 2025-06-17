@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
 
     # Files
     files.check_create_uploads_folder()
+    files.delete_empty_user_folders()
 
     # [ Lifespan ]
     yield
@@ -241,6 +242,42 @@ async def chat_stream(request: Request, chat_request: StreamChatRequest):
 # Initialization End-points:
 # ------------------------------------------------------------------------------
 
+# Helper function to delete old files and embeddings:
+def delete_old_files(user_id: str, time: int = OLD_FILE_THRESHOLD):
+    """Function to delete old files and embeddings older than the specified time."""
+    log.info(
+        f"/delete Deleting old files and embeddings for user '{user_id}' older than {time} seconds")
+
+    # Delete old files
+    old_files = sq_db.get_old_files(user_id=user_id, time=time)
+    if old_files['files']:
+        log.info(f"/delete Removing old files for user '{user_id}': {old_files['files']}")
+
+        for file in old_files['files']:
+            status = files.delete_file(user_id=user_id, file_name=file)
+            if status:
+                file_id = sq_db.get_file_id_by_name(user_id=user_id, file_name=file)
+                sq_db.mark_file_removed(user_id=user_id, file_id=file_id)
+
+    # Delete old embeddings
+    if old_files['embeddings']:
+        log.info(f"/delete Removing old embeddings for user '{user_id}'")
+        vs: VectorDB = app.state.vector_db
+        db: T_VECTOR_STORE = vs.get_vector_store()
+        resp = db.delete(old_files['embeddings'])
+
+        # Save the changes to disk
+        vs.save_db_to_disk()
+
+        if resp == True:
+            sq_db.mark_embeddings_removed(vector_ids=old_files['embeddings'])
+            log.info(f"/delete Old embeddings removed for user '{user_id}'")
+        else:
+            log.error(f"/delete Failed to remove old embeddings for user '{user_id}': {resp}")
+    else:
+        log.info(f"/delete No old files found for user '{user_id}'")
+
+
 # First end-point to call on client initialization:
 class LoginRequest(BaseModel):
     login_id: str
@@ -271,28 +308,7 @@ async def login(request: Request, login_request: LoginRequest):
     files.create_user_uploads_folder(user_id=user_id)
 
     # Old any older data if exists (older than 24 hours)
-    old = sq_db.get_old_files(user_id=user_id, time=OLD_FILE_THRESHOLD)
-    if old['files']:
-        log.info(f"/login Removing old files for user '{user_id}': {old['files']}")
-
-        for file in old['files']:
-            status = files.delete_file(user_id=user_id, file_name=file)
-            if status:
-                file_id = sq_db.get_file_id_by_name(user_id=user_id, file_name=file)
-                sq_db.mark_file_removed(user_id=user_id, file_id=file_id)
-
-    if old['embeddings']:
-        log.info(f"/login Removing old embeddings for user '{user_id}'")
-        # Add FAISS deletion code here:
-        db: T_VECTOR_STORE = app.state.vector_db.get_vector_store()
-        resp = db.delete(old['embeddings'])
-        if resp == True:
-            sq_db.mark_embeddings_removed(vector_ids=old['embeddings'])
-            log.info(f"/login Old embeddings removed for user '{user_id}'")
-        else:
-            log.error(f"/login Failed to remove old embeddings for user '{user_id}': {resp}")
-    else:
-        log.info(f"/login No old files found for user '{user_id}'")
+    delete_old_files(user_id=user_id, time=OLD_FILE_THRESHOLD)
 
     return {"user_id": user_id}
 
@@ -363,6 +379,19 @@ async def embed_file(embed_request: EmbedRequest, request: Request):
     else:
         log.error(f"/embed Embedding failed for '{user_id}' and file '{file_name}': {message}")
         return JSONResponse(content={"error": message}, status_code=500)
+
+
+# Endpoint /clear_my_files to clear all files uploaded by user:
+@app.post("/clear_my_files")
+async def clear_my_files(user_id: str = Form(...)):
+    """Endpoint to clear all files uploaded by user.
+    - Post request expects `user_id` as form parameter.
+    - Return JSON with `{"status": "success"}` or `{"error": "message"}` structure.
+    """
+
+    log.info(f"/clear_my_files Requested by '{user_id}'")
+    delete_old_files(user_id=user_id, time=1)
+    return JSONResponse(content={"status": "success"}, status_code=200)
 
 
 # End point to get all the files uploaded by user:

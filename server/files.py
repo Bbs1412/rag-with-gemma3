@@ -29,6 +29,20 @@ def check_create_uploads_folder() -> str:
     return UPLOADS_PATH
 
 
+def delete_empty_user_folders() -> None:
+    """Delete empty user folders in the uploads directory."""
+
+    try:
+        for user_folder in os.listdir(UPLOADS_PATH):
+            user_path = os.path.join(UPLOADS_PATH, user_folder)
+            if os.path.isdir(user_path) and not os.listdir(user_path):
+                shutil.rmtree(user_path)
+                log.info(f"Deleted empty user folder: {user_path}")
+
+    except Exception as e:
+        log.error(f"Error deleting empty user folders: {repr(e)}")
+        
+
 def create_user_uploads_folder(user_id: str) -> bool:
     """Create a user-specific uploads directory if it doesn't exist."""
 
