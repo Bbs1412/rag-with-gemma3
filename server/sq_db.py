@@ -135,7 +135,7 @@ def add_embedding(file_id: int, vector_id: str) -> bool:
 def get_user_files(user_id: str) -> List[str]:
     """Retrieves all files uploaded by a user.
     - Only retrieves files that are marked as available (not deleted).
-    
+
     Args:
         user_id (str): The ID of the user whose files are being queried.
 
@@ -158,7 +158,7 @@ def get_user_files(user_id: str) -> List[str]:
     except sqlite3.Error as e:
         log.error(f"SQLite error while retrieving files for user '{user_id}': {e}")
         return []
-    
+
 
 def get_old_files(user_id: str, time: int = 12*3600) -> dict[str, List[str]]:
     """Retrieves files uploaded by a user that are older than a specified time.
@@ -231,10 +231,10 @@ def get_file_id_by_name(user_id: str, file_name: str) -> int:
             result = cur.fetchone()
 
             if result:
-                log.info(f"File '{file_name}' found for user '{user_id}' with ID {result[0]}")
+                log.info(f"File '{file_name}' resolved ID={result[0]} for user '{user_id}'")
                 return result[0]
             else:
-                log.warning(f"File '{file_name}' not found for user '{user_id}'")
+                log.warning(f"File '{file_name}' not found to resolve ID for user '{user_id}'")
                 return -1
 
     except sqlite3.Error as e:
@@ -279,6 +279,40 @@ def mark_file_removed(user_id: str, file_id: int) -> bool:
 
     except sqlite3.Error as e:
         log.error(f"SQLite error while removing file ID {file_id} for user '{user_id}': {e}")
+        return False
+
+
+def mark_embeddings_removed(vector_ids: List[str]) -> bool:
+    """Marks an embedding as unavailable (deleted) in the database.
+
+    Args:
+        vector_ids (List[str]): A list of vector IDs to be marked as unavailable.
+    Returns:
+        bool: True if the embeddings were marked as unavailable, False otherwise.
+    """
+    if not vector_ids:
+        log.warning("No vector IDs provided to mark as removed.")
+        return False
+
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            placeholders = ', '.join('?' for _ in vector_ids)
+            cur.execute(f"""
+                UPDATE embeddings SET available = 0
+                WHERE vector_id IN ({placeholders})
+            """, vector_ids)
+            conn.commit()
+
+            if cur.rowcount != len(vector_ids):
+                log.warning(f"Marked {cur.rowcount}/{len(vector_ids)} embeddings as removed.")
+                return False
+            else:
+                log.info(f"Marked all ({len(vector_ids)}) embeddings as removed.")
+                return True
+
+    except sqlite3.Error as e:
+        log.error(f"SQLite error while marking embeddings as removed: {e}")
         return False
 
 

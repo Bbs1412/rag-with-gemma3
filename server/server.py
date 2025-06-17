@@ -25,6 +25,9 @@ from llm_system.core.ingestion import ingest_file           # Function
 import sq_db
 import files
 
+# Type hinting imports:
+from langchain_core.vectorstores import VectorStore as T_VECTOR_STORE
+
 import logger
 log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
 
@@ -35,7 +38,7 @@ log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
 
 # UPLOADS_DIR: str = "user_uploads"
 OLD_FILE_THRESHOLD: int = 3600 * 1  # 24 hours in seconds
-OLD_FILE_THRESHOLD: int = 60         # 1 min
+# OLD_FILE_THRESHOLD: int = 20         # 1 min
 
 
 # ------------------------------------------------------------------------------
@@ -47,6 +50,8 @@ async def lifespan(app: FastAPI):
     """Define the lifespan context manager for startup/shutdown"""
 
     # [ Startup ]
+    log.info("[LifeSpan] Starting the server components.")
+
     app.state.llm_chat = get_llm(
         model_name=config.LLM_CHAT_MODEL_NAME,
         context_size=config.MAX_CONTENT_SIZE,
@@ -276,11 +281,16 @@ async def login(request: Request, login_request: LoginRequest):
                 file_id = sq_db.get_file_id_by_name(user_id=user_id, file_name=file)
                 sq_db.mark_file_removed(user_id=user_id, file_id=file_id)
 
+    if old['embeddings']:
         log.info(f"/login Removing old embeddings for user '{user_id}'")
         # Add FAISS deletion code here:
-        # for doc in old['embeddings']:
-        # FAISS -> delete doc embedding
-
+        db: T_VECTOR_STORE = app.state.vector_db.get_vector_store()
+        resp = db.delete(old['embeddings'])
+        if resp == True:
+            sq_db.mark_embeddings_removed(vector_ids=old['embeddings'])
+            log.info(f"/login Old embeddings removed for user '{user_id}'")
+        else:
+            log.error(f"/login Failed to remove old embeddings for user '{user_id}': {resp}")
     else:
         log.info(f"/login No old files found for user '{user_id}'")
 
@@ -436,7 +446,7 @@ async def rag(request: Request, chat_request: RagChatRequest):
             dummy = chat_request.dummy
             log.info(f"/rag {'dummy' if dummy else 'real'} response requested by '{session_id}'")
 
-            # Start be sending meta data first.
+            # Start by sending meta data first.
             yield json.dumps({
                 "type": "metadata",
                 "data": {"session_id": session_id}
@@ -479,6 +489,11 @@ async def rag(request: Request, chat_request: RagChatRequest):
                             if await request.is_disconnected():
                                 log.warning(f"/rag client disconnected for '{session_id}'")
                                 break
+
+                            if "user_id" in document.metadata:
+                                # Hide user_id from metadata
+                                document.metadata.pop("user_id")
+                                
                             yield json.dumps({
                                 "type": "context",
                                 "data": {
