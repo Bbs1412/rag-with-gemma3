@@ -43,6 +43,10 @@ DOC_TOKEN_SIZE: int = DOC_CHAR_LIMIT // 4               # Appx number of tokens 
 DOCS_NUM_COUNT: int = 3000 // DOC_TOKEN_SIZE            # Max num of docs to retrieve.
 
 
+# Database:
+VECTOR_DB_PERSIST_DIR: str = "user_faiss"            # Path to persist the vector DB.
+VECTOR_DB_INDEX_NAME: str = "index.faiss"               # Name of the vector DB file.
+
 # Dummy response mode properties:
 TOKENS_PER_SEC: int = 50                                # num of tokens yielded per sec
 BATCH_TOKEN_PS: int = 2                                 # num of tokens yielded in each batch

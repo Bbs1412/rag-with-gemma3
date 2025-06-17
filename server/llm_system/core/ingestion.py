@@ -36,7 +36,7 @@ def ingest_file(user_id: str, file_path: str, vectorstore: VectorDB,
 
     # Load the file and get its content as Document objects:
     status, documents, message = load_file(user_id, file_path)
-    print(status, documents, message)
+    # print(status, documents, message)
 
     if not status:
         return False, [], message
@@ -53,9 +53,13 @@ def ingest_file(user_id: str, file_path: str, vectorstore: VectorDB,
     # Add the split documents to the vector database:
     try:
         doc_ids = vectorstore.db.add_documents(split_docs, embeddings=embeddings)
-        log.info(f"Ingested {len(split_docs)} documents from {file_path} into the vector database.")
-        return True, doc_ids, f"Ingested {len(split_docs)} documents successfully."
-
+        if vectorstore.save_db_to_disk():
+            log.info(f"Ingested {len(split_docs)} documents from {file_path} into the vector database.")
+            return True, doc_ids, f"Ingested {len(split_docs)} documents successfully."
+        else:
+            log.error("Failed to save the vector database to disk after ingestion.")
+            return False, [], "Failed to save the vector database to disk after ingestion."
+            
     except Exception as e:
         log.error(f"Failed to ingest documents: {e}")
         return False, [], f"Failed to ingest documents: {e}"
