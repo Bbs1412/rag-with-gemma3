@@ -6,7 +6,6 @@ from contextlib import contextmanager
 from typing import Optional, List, Literal
 
 import server.logger as logger
-# from .server import logger
 
 
 # ------------------------------------------------------------------------------
@@ -42,11 +41,37 @@ class Message:
         self.filenames = filenames
 
 
+# Get user_id:
+if "session_id" not in st.session_state:
+    with st.popover("Pick or Enter User Name", use_container_width=False):
+        names = ["nervous_nerd", "curious_cat", "bold_bear", "witty_wolf"]
+
+        name_options = st.columns(len(names)//2, gap='small', vertical_alignment='center')
+        name_options_2 = st.columns(len(names) - len(name_options),
+                                    gap='small', vertical_alignment='center')
+
+        for i, name in enumerate(names[:len(names)//2]):
+            if name_options[i].button(name, key=f"user_name_{i}"):
+                st.session_state.session_id = name
+
+        for i, name in enumerate(names[len(names)//2:]):
+            if name_options_2[i].button(name, key=f"user_name_{i + len(names)//2}"):
+                st.session_state.session_id = name
+
+        uip = st.text_input("Type", placeholder="Or, enter your own user ID:",
+                            value=st.session_state.get("session_id", ""))
+        if st.button("Set User ID", type="primary"):
+            uip = "_".join(uip.strip().lower().split(" "))
+            st.session_state.session_id = uip
+            st.rerun()
+    st.stop()
+
+
 if "initialized" not in st.session_state:
     # Initialize Logger:
-    st.session_state.logger = logger.get_logger(name="Streamlit")
-    log = st.session_state.logger
-    log.info("Streamlit initialized.")
+    # st.session_state.logger = logger.get_logger(name="Streamlit")
+    # log = st.session_state.logger
+    # log.info("Streamlit initialized.")
 
     # Initialize the session with server::
     st.session_state.server_ip = "http://127.0.0.1:8000"
@@ -54,20 +79,20 @@ if "initialized" not in st.session_state:
         resp = requests.post(
             f"{st.session_state.server_ip}/login",
             # json={"login_id": "bot_user", "password": "dummy"}
-            json={"login_id": "dev_user", "password": "dummy"}
+            json={"login_id": st.session_state.session_id, "password": "dummy"}
         )
 
         if resp.status_code == 200:
             session_id = resp.json().get("user_id")
             st.session_state.session_id = session_id
-            log.info(f"Server session initialized successfully. Session ID: {session_id}")
+            # log.info(f"Server session initialized successfully. Session ID: {session_id}")
         else:
             st.session_state.session_id = None
-            log.error(f"Failed to initialize server session: {resp.text}")
+            # log.error(f"Failed to initialize server session: {resp.text}")
             raise Exception("Server did not respond as expected.")
 
     except requests.RequestException as e:
-        log.error(f"Error initializing server session: {e}")
+        # log.error(f"Error initializing server session: {e}")
         st.error(
             "Failed to connect to the server. Please check your connection or server status.",
             icon="🚫"
@@ -76,28 +101,28 @@ if "initialized" not in st.session_state:
 
     # Initialize messages:
     st.session_state.chat_history = [
-        Message('assistant', "How may I help you today?"),
+        Message('assistant', "👋, How may I help you today?"),
         # Message("human", "Help me in some thing...")
     ]
 
-    # User uploads (Older, but less than threshold):
+    # User's Existing Uploads:
     st.session_state.user_uploads = requests.get(
         f"{st.session_state.server_ip}/uploads",
         params={"user_id": st.session_state.session_id}
     ).json().get("files", [])
+
+    # Last resp retrieved docs:
+    st.session_state.last_retrieved_docs = []
 
     # Set flag to true:
     st.session_state.initialized = True
 
 
 # All variables in session state:
-user_id, user_uploads, log, chat_history, server_ip = (
-    st.session_state.session_id,
-    st.session_state.user_uploads,
-    st.session_state.logger,
-    st.session_state.chat_history,
-    st.session_state.server_ip
-)
+user_id = st.session_state.session_id
+chat_history = st.session_state.chat_history
+server_ip = st.session_state.server_ip
+# log = st.session_state.logger
 
 
 # ------------------------------------------------------------------------------
@@ -131,21 +156,21 @@ def upload_file(uploaded_file) -> tuple[bool, str]:
     try:
         # POST to FastAPI
         files = {"file": (uploaded_file.name, uploaded_file.getvalue())}
-        data = {"user_id": st.session_state.session_id}
+        data = {"user_id": user_id}
         response = requests.post(f"{server_ip}/upload", files=files, data=data)
 
         if response.status_code == 200:
             message = response.json().get("message", "")
-            log.info(f"File `{message}` uploaded successfully for user `{user_id}`.")
+            # log.info(f"File `{message}` uploaded successfully for user `{user_id}`.")
             return True, message
         else:
             message = response.json().get("error", "Unknown error")
-            log.error(
-                f"Failed to upload file `{uploaded_file.name}`: {message} for user `{user_id}`.")
+            # log.error(
+            # f"Failed to upload file `{uploaded_file.name}`: {message} for user `{user_id}`.")
             return False, message
 
     except Exception as e:
-        log.error(f"Error uploading file `{uploaded_file.name}`: {e} for user `{user_id}`.")
+        # log.error(f"Error uploading file `{uploaded_file.name}`: {e} for user `{user_id}`.")
         return False, str(e)
 
 
@@ -162,21 +187,21 @@ def embed_file(file_name: str) -> tuple[bool, str]:
         response = requests.post(
             f"{server_ip}/embed",
             json={
-                "user_id": st.session_state.session_id,
+                "user_id": user_id,
                 "file_name": file_name
             }
         )
 
         if response.status_code == 200:
-            log.info(f"File `{file_name}` embedded successfully for user `{user_id}`.")
+            # log.info(f"File `{file_name}` embedded successfully for user `{user_id}`.")
             return True, response.json().get("message", "File embedded successfully.")
         else:
             error_message = response.json().get("error", "Unknown error")
-            log.error(f"Failed to embed file `{file_name}`: {error_message} for user `{user_id}`.")
+            # log.error(f"Failed to embed file `{file_name}`: {error_message} for user `{user_id}`.")
             return False, error_message
 
     except Exception as e:
-        log.error(f"Error embedding file `{file_name}`: {e} for user `{user_id}`.")
+        # log.error(f"Error embedding file `{file_name}`: {e} for user `{user_id}`.")
         return False, str(e)
 
 
@@ -213,7 +238,7 @@ def handle_uploaded_files(uploaded_files) -> bool:
             try:
                 for i, file in enumerate(uploaded_files):
                     progress_status += f"\n📂 Processing file {i+1} of {len(uploaded_files)}...\n"
-                    log.info(f"Processing file: {file.name}")
+                    # log.info(f"Processing file: {file.name}")
 
                     # Upload file:
                     with write_progress("Uploading file..."):
@@ -235,27 +260,27 @@ def handle_uploaded_files(uploaded_files) -> bool:
                         # Update data with latest user_upload
                         st.session_state.user_uploads = requests.get(
                             f"{st.session_state.server_ip}/uploads",
-                            params={"user_id": st.session_state.session_id}
+                            params={"user_id": user_id}
                         ).json().get("files", [])
 
-                        log.info(f"File `{file.name}` processed successfully.")
+                        # log.info(f"File `{file.name}` processed successfully.")
                         time.sleep(st.secrets.llm.end_delay)
 
                 return True
 
             except Exception as e:
-                log.error(f"Error processing files: {e}")
+                # log.error(f"Error processing files: {e}")
                 return False
 
 
-@st.cache_data(ttl=60 * 60 * 24, show_spinner=False)
+@st.cache_data(ttl=60 * 10, show_spinner=False)
 def get_iframe(file_name: str, num_pages: int = 5) -> tuple[bool, str]:
     """Get the iframe HTML for the PDF file."""
     try:
         response = requests.post(
             f"{st.session_state.server_ip}/iframe",
             json={
-                "user_id": st.session_state.session_id,
+                "user_id": user_id,
                 "file_name": file_name,
                 "num_pages": num_pages
             },
@@ -265,7 +290,7 @@ def get_iframe(file_name: str, num_pages: int = 5) -> tuple[bool, str]:
         else:
             return False, response.json().get("error", "Unknown error")
     except requests.RequestException as e:
-        log.error(f"Error getting iframe for {file_name}: {e}")
+        # log.error(f"Error getting iframe for {file_name}: {e}")
         return False, str(e)
 
 
@@ -273,6 +298,16 @@ def get_iframe(file_name: str, num_pages: int = 5) -> tuple[bool, str]:
 # Sidebar:
 # ------------------------------------------------------------------------------
 
+# User Profile:
+with st.sidebar.container(border=True):
+    c1, c2 = st.columns([1, 8])
+    # c1.image("./assets/user.png", use_container_width=True)
+    c1.write("👤")
+    c2.write(" ".join([word.capitalize() for word in user_id.split("_")]))
+# st.sidebar.divider()
+
+
+# Files Preview:
 st.sidebar.subheader("📂 Files")
 
 selected_file = st.sidebar.selectbox(
@@ -292,11 +327,25 @@ else:
             st.sidebar.markdown(content, unsafe_allow_html=True)
         else:
             st.sidebar.error(f"Error: **{content}**", icon="🚫")
-
-
 st.sidebar.divider()
+
+# Dummy Mode Toggle:
 st.sidebar.toggle(label="Dummy Response Mode", value=False, key="dummy_mode",
                   help="Toggle to use dummy responses instead of actual LLM responses.")
+
+# Clear My Data:
+if st.sidebar.button("Clear My Data", type="secondary", icon="🗑️"):
+    try:
+        resp = requests.post(
+            f"{st.session_state.server_ip}/clear_my_files",
+            data={"user_id": user_id}
+        )
+        if resp.status_code == 200:
+            st.success(resp.json().get("message", "Data cleared successfully!"), icon="✅")
+        else:
+            st.error(resp.json().get("error", "Failed to clear data."), icon="🚫")
+    except requests.RequestException as e:
+        st.error(f"Error clearing data: {e}", icon="🚫")
 
 # with st.sidebar:
 #     st.write(st.session_state)
@@ -309,12 +358,43 @@ a, b = st.columns([0.65, 9.35], vertical_alignment='bottom', gap='small')
 a.image("./assets/gemma.jpg", use_container_width=True)
 b.header(":green[RAG] with :blue[Gemma-3]", divider='rainbow')
 
-for message in st.session_state.chat_history:
-    if message.type == 'human':
-        write_as_human(message.content, message.filenames)
 
-    elif message.type == 'assistant':
-        write_as_ai(message.content)
+for ind, message in enumerate(st.session_state.chat_history):
+    if ind < len(st.session_state.chat_history) - 1:                # all messages except last
+        if message.type == 'human':
+            write_as_human(message.content, message.filenames)
+
+        elif message.type == 'assistant':
+            write_as_ai(message.content)
+
+    else:                                                           # Last message
+        if message.type == 'human':                                 # if human, write normally
+            write_as_human(message.content)
+
+        elif message.type == 'assistant':                           # if assistant
+            if st.session_state.get("last_retrieved_docs", []):     # If there are docs show them
+                documents = st.session_state.last_retrieved_docs
+
+                with st.chat_message(name='assistant', avatar='assistant'):
+                    with st.container(border=True):
+                        # Containers:
+                        cont_answer = st.empty()
+                        cont_docs = st.expander("🗃️ Sources", expanded=False)
+
+                        cont_answer.markdown(message.content)
+
+                        tabs = cont_docs.tabs(
+                            tabs=[f"Document {i+1}" for i in range(len(documents))])
+                        for i, doc in enumerate(documents):
+                            with tabs[i]:
+                                st.subheader(":blue[Content:]")
+                                st.markdown(doc['page_content'])
+                                st.divider()
+                                st.subheader(":blue[Source Details:]")
+                                st.json(doc['metadata'], expanded=False)
+
+            else:                                                       # ai w/o docs (show normal)
+                write_as_ai(message.content)
 
 
 if user_message := st.chat_input(
@@ -335,6 +415,8 @@ if user_message := st.chat_input(
     st.session_state.chat_history.append(new_message)
     # For now, write it on screen:
     write_as_human(new_message.content, new_message.filenames)
+    # Clear last documents:
+    st.session_state.last_retrieved_docs = []
 
     # Handle the files if any:
     if user_message.files:
@@ -344,18 +426,18 @@ if user_message := st.chat_input(
             st.error("Error processing files. Please try again.", icon="🚫")
 
     # Get response and write it:
-    full = ""
     with st.chat_message(name='assistant', avatar='assistant'):
         with st.spinner("Generating response..."):
-            resp_holder = st.empty()
+            full = ""
 
             # If dummy mode is enabled, use dummy response:
             if st.session_state.get("dummy_mode", False):
+                resp_holder = st.empty()
                 response = requests.post(
                     "http://127.0.0.1:8000/rag",
                     json={
                         "query": new_message.content,
-                        "session_id": st.session_state.session_id,
+                        "session_id": user_id,
                         "dummy": True
                     },
                     stream=True
@@ -376,19 +458,58 @@ if user_message := st.chat_input(
                         #     st.error(decoded['data'])
                         #     continue
 
-                        resp_holder.container(border=True).markdown(full + "█")
+                        resp_holder.markdown(full + "█")
 
-            else:
-                st.snow()
-                st.stop()
+            else:                                           # real RAG response from server
+                response = requests.post(
+                    "http://127.0.0.1:8000/rag",
+                    json={
+                        "query": new_message.content,
+                        "session_id": user_id,
+                        "dummy": False
+                    },
+                    stream=True
+                )
 
-                # resp = get_response_stream(new_message.content, dummy=False)
-                # resp = get_conversational_rag_response(new_message.content, session_id="154")
-                # for chunk in resp:
-                #     # st.write(chunk)
-                #     full += chunk
-                #     trail_char = "█"  # "█", "▌", "|", "•"
-                #     resp_holder.container(border=True).markdown(full + trail_char)
+                documents = []
+                resp_holder = st.container(border=True)
+                document_holder = resp_holder.empty()
+                reply_holder = resp_holder.empty()
 
-    st.session_state.chat_history.append(Message("assistant", full))
+                for chunk in response.iter_content(chunk_size=None):
+                    if chunk:
+                        decoded = chunk.decode("utf-8")
+                        decoded = json.loads(decoded)
+
+                        if decoded["type"] == "metadata":
+                            # Skip metadata for now
+                            continue
+                            # full += f"```json\n{json.dumps(decoded['data'], indent=2)}\n```\n\n\n"
+
+                        elif decoded["type"] == "context":
+                            documents.append(decoded['data'])
+
+                        elif decoded["type"] == "content":
+                            full += decoded["data"]
+
+                        else:
+                            st.error(decoded['data'])
+                            continue
+
+                        if documents:
+                            docs = document_holder.expander("🗃️ Sources", expanded=True)
+                            tabs = docs.tabs(
+                                tabs=[f"Document {i+1}" for i in range(len(documents))])
+                            for i, doc in enumerate(documents):
+                                with tabs[i]:
+                                    st.subheader(":blue[Content:]")
+                                    st.markdown(doc['page_content'])
+                                    st.divider()
+                                    st.subheader(":blue[Source Details:]")
+                                    st.json(doc['metadata'], expanded=False)
+
+                        reply_holder.container(border=True).markdown(full + "█")
+
+                st.session_state.last_retrieved_docs = documents
+            st.session_state.chat_history.append(Message("assistant", full))
     st.rerun()
