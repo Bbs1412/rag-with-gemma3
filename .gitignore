@@ -175,5 +175,8 @@ cython_debug/
 
 .vscode/
 temp_*
-*.toml
-uploads/
+ToDo.*
+
+server/user_uploads/
+server/user_data.db
+server/user_faiss/
