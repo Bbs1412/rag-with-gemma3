@@ -5,7 +5,7 @@ import streamlit as st
 from contextlib import contextmanager
 from typing import Optional, List, Literal
 
-import server.logger as logger
+# import server.logger as logger
 
 
 # ------------------------------------------------------------------------------
@@ -269,7 +269,8 @@ def handle_uploaded_files(uploaded_files) -> bool:
                 return True
 
             except Exception as e:
-                # log.error(f"Error processing files: {e}")
+                st.exception(exception=e)
+                st.stop()
                 return False
 
 
@@ -365,26 +366,56 @@ for ind, message in enumerate(st.session_state.chat_history):
             write_as_human(message.content, message.filenames)
 
         elif message.type == 'assistant':
-            write_as_ai(message.content)
+            answer = message.content
+            if "<think>" in answer:
+                answer = answer[answer.find("</think>") + len("</think>"):]
+            write_as_ai(answer)
 
     else:                                                           # Last message
         if message.type == 'human':                                 # if human, write normally
             write_as_human(message.content)
 
         elif message.type == 'assistant':                           # if assistant
-            if st.session_state.get("last_retrieved_docs", []):     # If there are docs show them
-                documents = st.session_state.last_retrieved_docs
+            # Get the answer, thoughts and docs from the message:
+            full = message.content
+            thoughts = full[
+                full.find("<think>")+8:full.find("</think>")
+            ] if "<think>" in full else None
+            answer = full[full.find("</think>") + len("</think>"):] if thoughts else full
+            documents = st.session_state.last_retrieved_docs if st.session_state.last_retrieved_docs else None
 
-                with st.chat_message(name='assistant', avatar='assistant'):
-                    with st.container(border=True):
-                        # Containers:
-                        cont_answer = st.empty()
-                        cont_docs = st.expander("🗃️ Sources", expanded=False)
+            with st.chat_message(name='assistant', avatar='assistant'):
+                with st.container(border=True):
+                    # # Thinking:
+                    # if thoughts:
+                    #     cont_thoughts = st.expander("💭 Thoughts", expanded=True).markdown(thoughts)
+                    # # Answer:
+                    # st.markdown(answer)
+                    # # Documents:
+                    # if documents:
+                    #     tabs = st.expander("🗃️ Sources", expanded=False).tabs(
+                    #         tabs=[f"Document {i+1}" for i in range(len(documents))]
+                    #     )
+                    #     for i, doc in enumerate(documents):
+                    #         with tabs[i]:
+                    #             st.subheader(":blue[Content:]")
+                    #             st.markdown(doc['page_content'])
+                    #             st.divider()
+                    #             st.subheader(":blue[Source Details:]")
+                    #             st.json(doc['metadata'], expanded=False)
 
-                        cont_answer.markdown(message.content)
-
-                        tabs = cont_docs.tabs(
-                            tabs=[f"Document {i+1}" for i in range(len(documents))])
+                    # Thinking:
+                    if thoughts:
+                        # cont_thoughts = c1.expander("💭 Thoughts", expanded=True).markdown(thoughts)
+                        cont_thoughts = st.popover(
+                            "💭 Thoughts", use_container_width=False).markdown(thoughts)
+                    # Answer:
+                    st.markdown(answer)
+                    # Documents:
+                    if documents:
+                        tabs = st.expander("🗃️ Sources", expanded=False).tabs(
+                            tabs=[f"Document {i+1}" for i in range(len(documents))]
+                        )
                         for i, doc in enumerate(documents):
                             with tabs[i]:
                                 st.subheader(":blue[Content:]")
@@ -392,9 +423,6 @@ for ind, message in enumerate(st.session_state.chat_history):
                                 st.divider()
                                 st.subheader(":blue[Source Details:]")
                                 st.json(doc['metadata'], expanded=False)
-
-            else:                                                       # ai w/o docs (show normal)
-                write_as_ai(message.content)
 
 
 if user_message := st.chat_input(
