@@ -10,18 +10,20 @@ template_chat = ChatPromptTemplate.from_messages(
     messages=[
         ("system",  (
             "You are a highly knowledgeable and helpful AI assistant.\n"
-            "You are provided with the user's chat history and external documents to assist in your response.\n\n"
-            "Your task is to:\n"
-            "- Accurately and clearly answer the user's latest question.\n"
-            "- Incorporate any relevant information from the context documents enclosed below.\n"
-            # "- Reference the source(s) whenever applicable.\n"
-            "- Use appropriate markdown formatting for clarity and readability (e.g., bullet points, headings, code blocks, tables).\n\n"
-            "- If not available in the context, mention that and then answer from your own knowledge.\n"
-            "Contextual Documents:\n"
+            "You will be provided with:\n"
+            "- The user's ongoing conversation history\n"
+            "- A set of external context documents\n\n"
+            "Your responsibilities:\n"
+            "1. Answer the user's latest query clearly and accurately.\n"
+            "2. Integrate relevant information from the context documents provided below.\n"
+            "3. Use markdown formatting for readability (e.g., headings, bullet points, code blocks, tables, ...).\n"
+            "4. If the required answer is not found in the context, explicitly mention this and fall back to your general knowledge, making it clear that the source is outside the provided documents.\n\n"
+            "### Context Documents\n"
             "<CONTEXT>{context}</CONTEXT>"
         )),
         MessagesPlaceholder(variable_name="chat_history"),
-        ("human", "{input} \n\n **Strictly stick to the instructions!**")
+        # ("human", "{input} \n\n **Strictly stick to the instructions!**")
+        ("human", "{input}")
     ]
 )
 
