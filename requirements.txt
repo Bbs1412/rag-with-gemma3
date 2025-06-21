@@ -1,4 +1,4 @@
-streamlit==1.45.1
+# streamlit==1.45.1
 ipykernel==6.29.5
 langchain==0.3.25
 langchain-community==0.3.24
@@ -12,6 +12,7 @@ faiss-cpu==1.11.0
 fastapi==0.115.12
 uvicorn==0.34.2
 python-multipart==0.0.20
+pytz==2025.2
 
 
 # Others:
