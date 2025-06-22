@@ -15,9 +15,6 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Replace README for Hugging Face
-        run: cp README_HF.md README.md
-
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
