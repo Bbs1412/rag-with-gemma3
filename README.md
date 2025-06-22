@@ -5,8 +5,8 @@ colorFrom: indigo
 colorTo: pink
 sdk: docker
 pinned: false
-license: cc-by-nc-sa-4.0
-short_description: This space is intended to be FastAPI backend for the RAG.
+license: gpl-3.0
+short_description: FastAPI backend for the RAG System.
 ---
 
 Check out the configuration reference at https://huggingface.co/docs/hub/spaces-config-reference
