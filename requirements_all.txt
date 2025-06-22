@@ -1,9 +1,8 @@
-# streamlit==1.45.1
+# Common in all environments:
 ipykernel==6.29.5
 langchain==0.3.25
 langchain-community==0.3.24
 langchain-core==0.3.60
-langchain-ollama==0.3.3
 langchain-text-splitters==0.3.8
 PyMuPDF==1.25.5
 unstructured==0.17.2
@@ -13,6 +12,14 @@ fastapi==0.115.12
 uvicorn==0.34.2
 python-multipart==0.0.20
 pytz==2025.2
+
+# If you want to serve streamlit app:
+streamlit==1.45.1
+
+# One of these two as per your convenience:
+# I have used ollama for 'dev' and google-genai for 'deploy'
+langchain-ollama==0.3.3
+langchain-google-genai==2.1.5
 
 
 # Others:
