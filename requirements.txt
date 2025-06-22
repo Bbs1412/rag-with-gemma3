@@ -19,7 +19,7 @@ streamlit==1.45.1
 # One of these two as per your convenience:
 # I have used ollama for 'dev' and google-genai for 'deploy'
 langchain-ollama==0.3.3
-langchain-google-genai==2.1.5
+langchain-google-genai==2.1
 
 
 # Others:
