@@ -74,7 +74,7 @@ if "initialized" not in st.session_state:
     # log.info("Streamlit initialized.")
 
     # Initialize the session with server::
-    st.session_state.server_ip = "http://127.0.0.1:8000"
+    st.session_state.server_ip = st.secrets.server.ip_address
     try:
         resp = requests.post(
             f"{st.session_state.server_ip}/login",
@@ -462,7 +462,7 @@ if user_message := st.chat_input(
             if st.session_state.get("dummy_mode", False):
                 resp_holder = st.empty()
                 response = requests.post(
-                    "http://127.0.0.1:8000/rag",
+                    f"{server_ip}/rag",
                     json={
                         "query": new_message.content,
                         "session_id": user_id,
@@ -490,7 +490,7 @@ if user_message := st.chat_input(
 
             else:                                           # real RAG response from server
                 response = requests.post(
-                    "http://127.0.0.1:8000/rag",
+                    f"{server_ip}/rag",
                     json={
                         "query": new_message.content,
                         "session_id": user_id,
