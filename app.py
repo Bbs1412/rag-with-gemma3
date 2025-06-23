@@ -43,6 +43,16 @@ class Message:
 
 # Get user_id:
 if "session_id" not in st.session_state:
+
+    try:
+        if requests.get(f"{st.secrets.server.ip_address}/").status_code != 200:
+            raise Exception
+    except:
+        st.error(
+            "Server is not reachable. Please check your connection or server status.", icon="🚫"
+        )
+        st.stop()
+
     # with st.container(border=True, height=500):
     with st.container(border=True):
         tabs = st.tabs(tabs=['Register', 'Login'])
@@ -121,7 +131,7 @@ if "session_id" not in st.session_state:
                         )
 
                         if resp.status_code == 201:
-                            st.session_state.session_id = ip_user_id
+                            # st.session_state.session_id = ip_user_id
                             st.success("Registration successful! You can now login.", icon="✅")
                             st.stop()
                         else:
