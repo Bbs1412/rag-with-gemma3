@@ -81,11 +81,22 @@ if "initialized" not in st.session_state:
             # json={"login_id": "bot_user", "password": "dummy"}
             json={"login_id": st.session_state.session_id, "password": "dummy"}
         )
-
         if resp.status_code == 200:
             session_id = resp.json().get("user_id")
             st.session_state.session_id = session_id
             # log.info(f"Server session initialized successfully. Session ID: {session_id}")
+
+            # Initialize messages:
+            st.session_state.chat_history = [Message('assistant', "👋, How may I help you today?")]
+
+            # Load old chat history (if):
+            chat_hist = resp.json().get("chat_history", [])
+            for msg in chat_hist:
+                if msg['type'] == 'human':
+                    st.session_state.chat_history.append(Message('human', msg['content']))
+                elif msg['type'] == 'ai':
+                    st.session_state.chat_history.append(Message('assistant', msg['content']))
+
         else:
             st.session_state.session_id = None
             # log.error(f"Failed to initialize server session: {resp.text}")
@@ -99,11 +110,11 @@ if "initialized" not in st.session_state:
         )
         st.stop()
 
-    # Initialize messages:
-    st.session_state.chat_history = [
-        Message('assistant', "👋, How may I help you today?"),
-        # Message("human", "Help me in some thing...")
-    ]
+    # # Initialize messages:
+    # st.session_state.chat_history = [
+    #     Message('assistant', "👋, How may I help you today?"),
+    #     # Message("human", "Help me in some thing...")
+    # ]
 
     # User's Existing Uploads:
     st.session_state.user_uploads = requests.get(
@@ -335,18 +346,35 @@ st.sidebar.toggle(label="Dummy Response Mode", value=False, key="dummy_mode",
                   help="Toggle to use dummy responses instead of actual LLM responses.")
 
 # Clear My Data:
-if st.sidebar.button("Clear My Data", type="secondary", icon="🗑️"):
+if st.sidebar.button("Clear My Uploads", type="secondary", icon="🗑️"):
     try:
         resp = requests.post(
             f"{st.session_state.server_ip}/clear_my_files",
             data={"user_id": user_id}
         )
         if resp.status_code == 200:
-            st.success(resp.json().get("message", "Data cleared successfully!"), icon="✅")
+            st.success(resp.json().get("message", "Uploads cleared successfully!"), icon="✅")
         else:
-            st.error(resp.json().get("error", "Failed to clear data."), icon="🚫")
+            st.error(resp.json().get("error", "Failed to clear Uploads."), icon="🚫")
     except requests.RequestException as e:
-        st.error(f"Error clearing data: {e}", icon="🚫")
+        st.error(f"Error clearing Uploads: {e}", icon="🚫")
+
+# Clear my Chat History:
+if st.sidebar.button("Clear My Chat History", type="secondary", icon="💬"):
+    resp = requests.post(
+        f"{server_ip}/clear_chat_history",
+        data={"user_id": user_id}
+    )
+
+    if resp.status_code == 200:
+        st.session_state.chat_history = [
+            Message('assistant', "👋, How may I help you today?")
+        ]
+        st.session_state.last_retrieved_docs = []
+        st.success("Chat history cleared successfully!", icon="✅")
+        st.rerun()
+    else:
+        st.error(resp.json().get("error", "Failed to clear chat history."), icon="🚫")
 
 # with st.sidebar:
 #     st.write(st.session_state)

@@ -288,12 +288,12 @@ class LoginRequest(BaseModel):
 async def login(request: Request, login_request: LoginRequest):
     """Endpoint to handle user login.
     + Client sends login_id and password for login
-    + Based on it, server sends back one user_id
+    + Based on it, server sends back one user_id (like one time session id irl)
     + But, for now, it is skipped and we will send one dummy user_id
     + Folder is created for user_id, older files are removed
 
     - Post request expects JSON `{"login_id": "", "password": ""}` structure.
-    - Return JSON with `{"user_id": "dummy_user_id"}` structure.
+    - Return JSON with `{"user_id": "dummy_user_id", "chat_history": [user chat history]}` structure.
     """
 
     login_id = login_request.login_id.strip()
@@ -310,7 +310,15 @@ async def login(request: Request, login_request: LoginRequest):
     # Old any older data if exists (older than 24 hours)
     delete_old_files(user_id=user_id, time=OLD_FILE_THRESHOLD)
 
-    return {"user_id": user_id}
+    # Get the chat history for the user_id
+    hs: HistoryStore = request.app.state.history_store
+    history = hs.get_session_history(session_id=user_id)
+    if not history:
+        log.info(f"/login No history found for user '{user_id}'")
+    else:
+        log.info(f"/login History found for user '{user_id}' with {len(history.messages)} messages")
+
+    return {"user_id": user_id, "chat_history": history.messages}
 
 
 # ------------------------------------------------------------------------------
@@ -381,6 +389,10 @@ async def embed_file(embed_request: EmbedRequest, request: Request):
         return JSONResponse(content={"error": message}, status_code=500)
 
 
+# ------------------------------------------------------------------------------
+# Data management endpoints:
+# ------------------------------------------------------------------------------
+
 # Endpoint /clear_my_files to clear all files uploaded by user:
 @app.post("/clear_my_files")
 async def clear_my_files(user_id: str = Form(...)):
@@ -392,6 +404,23 @@ async def clear_my_files(user_id: str = Form(...)):
     log.info(f"/clear_my_files Requested by '{user_id}'")
     delete_old_files(user_id=user_id, time=1)
     return JSONResponse(content={"status": "success"}, status_code=200)
+
+
+# Endpoint /clear_chat_history to clear chat history for user:
+@app.post("/clear_chat_history")
+async def clear_chat_history(user_id: str = Form(...)):
+    """Endpoint to clear chat history for user.
+    - Post request expects `user_id` as form parameter.
+    - Return JSON with `{"status": "success"}` or `{"error": "message"}` structure.
+    """
+    log.info(f"/clear_chat_history Requested by '{user_id}'")
+    hs: HistoryStore = app.state.history_store
+    status = hs.clear_session_history(session_id=user_id)
+
+    if status:
+        return JSONResponse(content={"status": "success"}, status_code=200)
+    else:
+        return JSONResponse(content={"error": "No history found to clear"}, status_code=404)
 
 
 # End point to get all the files uploaded by user:
@@ -558,3 +587,18 @@ async def rag(request: Request, chat_request: RagChatRequest):
             }) + "\n"
 
     return StreamingResponse(token_streamer(), media_type="text/plain")
+
+
+# ------------------------------------------------------------------------------
+# Run the FastAPI server:
+# ------------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    print("WARNING: Starting server without explicit uvicorn command. Not recommended for production use.")
+    import uvicorn
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=8000,
+        reload=False
+    )
