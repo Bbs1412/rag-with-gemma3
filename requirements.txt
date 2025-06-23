@@ -1,4 +1,4 @@
-# Common in all environments:
+# Backend Req: Common in all environments:
 ipykernel==6.29.5
 langchain==0.3.25
 langchain-community==0.3.24
@@ -12,11 +12,13 @@ fastapi==0.115.12
 uvicorn==0.34.2
 python-multipart==0.0.20
 pytz==2025.2
+bcrypt==4.3.0
 
-# If you want to serve streamlit app:
+# Frontend Req: If you want to serve streamlit app:
+pytz==2025.2
 streamlit==1.45.1
 
-# One of these two as per your convenience:
+# Backend Req: One of these two as per your convenience:
 # I have used ollama for 'dev' and google-genai for 'deploy'
 langchain-ollama==0.3.3
 langchain-google-genai==2.1
