@@ -7,7 +7,6 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 import json
-from typing import Literal
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 
@@ -27,9 +26,10 @@ import files
 
 # Type hinting imports:
 from langchain_core.vectorstores import VectorStore as T_VECTOR_STORE
+from langchain_core.messages import BaseMessage as T_MESSAGE
 
 import logger
-log = logger.get_logger("rag_server", log_to_console=False, log_to_file=True)
+log = logger.get_logger("rag_server")
 
 
 # ------------------------------------------------------------------------------
@@ -288,37 +288,133 @@ class LoginRequest(BaseModel):
 async def login(request: Request, login_request: LoginRequest):
     """Endpoint to handle user login.
     + Client sends login_id and password for login
-    + Based on it, server sends back one user_id (like one time session id irl)
-    + But, for now, it is skipped and we will send one dummy user_id
-    + Folder is created for user_id, older files are removed
+    + Based on it, server authenticates user.
+    + user_id is retrieved (for now, it is same as login_id)
+    + ? Based on user_id chat history of user is retrieved n returned.
+
+    * Folder is created for user_id, older files are removed
+    * Later on, will add on scheduled job to delete old items and will remove the old file deletion logic from here.
 
     - Post request expects JSON `{"login_id": "", "password": ""}` structure.
-    - Return JSON with `{"user_id": "dummy_user_id", "chat_history": [user chat history]}` structure.
+    - Return JSON with `{"user_id": "user_id", "chat_history": [user chat history]}` structure.
     """
 
     login_id = login_request.login_id.strip()
     password = login_request.password.strip()
+    log.info(f"/login Requested by '{login_id}'")
 
-    # For now, we will just return a dummy user_id
-    # In future, can implement actual user authentication and return a real user_id
-    user_id = login_id
-    log.info(f"/login requested by '{user_id}'")
-
-    # Check if folder exists in UPLOADS_DIR with user_id
-    files.create_user_uploads_folder(user_id=user_id)
-
-    # Old any older data if exists (older than 24 hours)
-    delete_old_files(user_id=user_id, time=OLD_FILE_THRESHOLD)
-
-    # Get the chat history for the user_id
-    hs: HistoryStore = request.app.state.history_store
-    history = hs.get_session_history(session_id=user_id)
-    if not history:
-        log.info(f"/login No history found for user '{user_id}'")
+    # Check if the user exists in the database
+    status, msg = sq_db.authenticate_user(user_id=login_id, password=password)
+    if status:
+        user_id = login_id
+        # Check if folder exists in UPLOADS_DIR with user_id
+        files.create_user_uploads_folder(user_id=user_id)
+        # Delete any older data if exists
+        delete_old_files(user_id=user_id, time=OLD_FILE_THRESHOLD)
+        return JSONResponse(content={"user_id": user_id, "name": msg}, status_code=200)
     else:
-        log.info(f"/login History found for user '{user_id}' with {len(history.messages)} messages")
+        return JSONResponse(content={"error": msg}, status_code=401)
 
-    return {"user_id": user_id, "chat_history": history.messages}
+    # # For now, we will just return a dummy user_id
+    # # In future, can implement actual user authentication and return a real user_id
+    # user_id = login_id
+    # log.info(f"/login requested by '{user_id}'")
+
+    # # Check if folder exists in UPLOADS_DIR with user_id
+    # files.create_user_uploads_folder(user_id=user_id)
+
+    # # Old any older data if exists (older than 24 hours)
+    # delete_old_files(user_id=user_id, time=OLD_FILE_THRESHOLD)
+
+    # # Get the chat history for the user_id
+    # hs: HistoryStore = request.app.state.history_store
+    # history = hs.get_session_history(session_id=user_id)
+    # if not history:
+    #     log.info(f"/login No history found for user '{user_id}'")
+    # else:
+    #     log.info(f"/login History found for user '{user_id}' with {len(history.messages)} messages")
+
+    # return {"user_id": user_id, "chat_history": history.messages}
+
+
+# endpoint for user registration:
+class RegisterRequest(BaseModel):
+    name: str
+    user_id: str
+    password: str
+
+
+@app.post("/register")
+async def register(request: Request, register_request: RegisterRequest):
+    """Endpoint to handle user registration.
+    - Post request expects JSON `{"user_name": "Full Name", "user_id": "any_u_id", "password": "raw_pw"}` structure.
+    - Return JSON with `{"status": "success"}` or `{"error": "message"}` structure.
+    """
+
+    name = register_request.name.strip()
+    user_id = register_request.user_id.strip()
+    password = register_request.password.strip()
+    log.info(f"/register Requested by {name} with '{user_id}'")
+    print(f"Name: {name}, UserID: {user_id}, Password: {password}")
+
+    # Check if the user already exists
+    status = sq_db.check_user_exists(user_id=user_id)
+    if status:
+        log.error(f"/register UserID '{user_id}' already exists.")
+        return JSONResponse(content={"error": "User already exists"}, status_code=400)
+
+    # If user does not exist, add the user to the database
+    status = sq_db.add_user(user_id=user_id, name=name, password=password)
+    if status:
+        return JSONResponse(content={"status": "success"}, status_code=201)
+    else:
+        return JSONResponse(content={"error": "Failed to register user"}, status_code=500)
+
+
+# ------------------------------------------------------------------------------
+# Chat History Endpoints:
+# ------------------------------------------------------------------------------
+
+# Endpoint to get chat history for user:
+@app.post("/chat_history")
+async def chat_history(user_id: str = Form(...)):
+    """Endpoint to get chat history for user.
+    - Post request expects `user_id` as form parameter.
+    - Return JSON with `{"chat_history": [user chat history]}` or `{"error": "message"}` structure.
+    """
+    log.info(f"/chat_history Requested by '{user_id}'")
+    hs: HistoryStore = app.state.history_store
+    history = hs.get_session_history(session_id=user_id)
+
+    if history:
+        messages = []
+        for msg in history.messages:
+            msg: T_MESSAGE
+            if msg.type == "ai":
+                messages.append({"role": "assistant", "content": msg.text()})
+            elif msg.type == "human":
+                messages.append({"role": "human", "content": msg.text()})
+
+        return JSONResponse(content={"chat_history": messages}, status_code=200)
+    else:
+        return JSONResponse(content={"error": "No chat history found"}, status_code=404)
+
+
+# Endpoint /clear_chat_history to clear chat history for user:
+@app.post("/clear_chat_history")
+async def clear_chat_history(user_id: str = Form(...)):
+    """Endpoint to clear chat history for user.
+    - Post request expects `user_id` as form parameter.
+    - Return JSON with `{"status": "success"}` or `{"error": "message"}` structure.
+    """
+    log.info(f"/clear_chat_history Requested by '{user_id}'")
+    hs: HistoryStore = app.state.history_store
+    status = hs.clear_session_history(session_id=user_id)
+
+    if status:
+        return JSONResponse(content={"status": "success"}, status_code=200)
+    else:
+        return JSONResponse(content={"error": "No history found to clear"}, status_code=404)
 
 
 # ------------------------------------------------------------------------------
@@ -328,27 +424,22 @@ async def login(request: Request, login_request: LoginRequest):
 # Endpoint to receive file uploads:
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...), user_id: str = Form(...)):
-    try:
-        log.info(f"/upload Received file: {file.filename} from user: {user_id}")
-        filename = file.filename if file.filename else "unknown_file"
+    log.info(f"/upload Received file: {file.filename} from user: {user_id}")
+    filename = file.filename if file.filename else "unknown_file"
 
-        status, message = files.save_file(
-            user_id=user_id,
-            file_value_binary=await file.read(),
-            file_name=filename
-        )
+    status, message = files.save_file(
+        user_id=user_id,
+        file_value_binary=await file.read(),
+        file_name=filename
+    )
 
-        if status:
-            filename = message
-            sq_db.add_file(user_id=user_id, filename=filename)
-            return JSONResponse(content={"message": filename}, status_code=200)
-        else:
-            log.error(f"/upload File upload failed for user {user_id}: {filename}")
-            return JSONResponse(content={"error": message}, status_code=500)
-
-    except Exception as e:
-        log.error(f"/upload File upload failed: {e}")
-        return JSONResponse(content={"error": str(e)}, status_code=500)
+    if status:
+        filename = message
+        sq_db.add_file(user_id=user_id, filename=filename)
+        return JSONResponse(content={"message": filename}, status_code=200)
+    else:
+        log.error(f"/upload File upload failed for user {user_id}: {filename}")
+        return JSONResponse(content={"error": message}, status_code=500)
 
 
 # Endpoint to embed the uploaded file:
@@ -404,23 +495,6 @@ async def clear_my_files(user_id: str = Form(...)):
     log.info(f"/clear_my_files Requested by '{user_id}'")
     delete_old_files(user_id=user_id, time=1)
     return JSONResponse(content={"status": "success"}, status_code=200)
-
-
-# Endpoint /clear_chat_history to clear chat history for user:
-@app.post("/clear_chat_history")
-async def clear_chat_history(user_id: str = Form(...)):
-    """Endpoint to clear chat history for user.
-    - Post request expects `user_id` as form parameter.
-    - Return JSON with `{"status": "success"}` or `{"error": "message"}` structure.
-    """
-    log.info(f"/clear_chat_history Requested by '{user_id}'")
-    hs: HistoryStore = app.state.history_store
-    status = hs.clear_session_history(session_id=user_id)
-
-    if status:
-        return JSONResponse(content={"status": "success"}, status_code=200)
-    else:
-        return JSONResponse(content={"error": "No history found to clear"}, status_code=404)
 
 
 # End point to get all the files uploaded by user:

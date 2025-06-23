@@ -5,6 +5,8 @@ Module for managing SQLite database operations.
 - Each table has col 'available' to mark if the record is still valid or has been deleted.
 """
 
+import bcrypt
+import os
 import sqlite3
 from typing import List
 from pathlib import Path
@@ -18,6 +20,10 @@ DB_PATH = Path("user_data.db")
 IST = pytz.timezone('Asia/Kolkata')
 
 
+# ------------------------------------------------------------------------------
+# Database Management Functions:
+# ------------------------------------------------------------------------------
+
 def get_connection():
     """Creates and returns a SQLite database connection.
     - The connection is set to allow multiple threads to access it.
@@ -30,11 +36,17 @@ def get_connection():
 def delete_database() -> bool:
     """Deletes the SQLite database file if it exists."""
 
-    if DB_PATH.exists():
-        DB_PATH.unlink()
-        return True
+    if os.path.exists(DB_PATH):
+        try:
+            os.remove(DB_PATH)
+            log.info(f"Database file '{DB_PATH}' deleted successfully.")
+            return True
+        except OSError as e:
+            log.error(f"Error deleting database file '{DB_PATH}': {e}")
+            return False
     else:
-        raise FileNotFoundError(f"Database file '{DB_PATH}' does not exist.")
+        log.warning(f"Database file '{DB_PATH}' does not exist, nothing to delete.")
+        return True
 
 
 def create_tables():
@@ -46,14 +58,25 @@ def create_tables():
     with get_connection() as conn:
         cur = conn.cursor()
 
-        # UPLOADS(file_id*, user_id, filename, created_at, available)
+        # USERS(user_id*, name, password_hash, last_login)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id TEXT PRIMARY KEY UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                last_login TEXT
+            )
+        """)
+
+        # UPLOADS(file_id*, user_id^, filename, created_at, available)
         cur.execute("""
             CREATE TABLE IF NOT EXISTS uploads (
                 file_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id TEXT NOT NULL,
                 filename TEXT NOT NULL,
                 created_at TEXT NOT NULL,
-                available INTEGER DEFAULT 1
+                available INTEGER DEFAULT 1,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
             )
         """)
 
@@ -71,6 +94,124 @@ def create_tables():
         conn.commit()
         log.info("Database tables created successfully.")
 
+
+# ------------------------------------------------------------------------------
+# User Management Functions:
+# ------------------------------------------------------------------------------
+
+def add_user(user_id: str, name: str, password: str) -> bool:
+    """Adds a new user to the database.
+
+    Args:
+        user_id (str): The unique ID of the user.
+        name (str): The name of the user.
+        password (str): The raw password of the user.
+
+    Returns:
+        bool: True if the user was added successfully, False otherwise.
+    """
+
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            ist_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
+            hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+
+            cur.execute("""
+                INSERT INTO users (user_id, name, password_hash, last_login)
+                VALUES (?, ?, ?, ?)
+            """, (user_id, name, hashed_password.decode('utf-8'), ist_time))
+            conn.commit()
+
+            if cur.rowcount == 0:
+                log.error(f"Failed to insert user '{name}' with ID '{user_id}'")
+                return False
+
+            log.info(f"User '{name}' added with ID '{user_id}'")
+            return True
+    except sqlite3.Error as e:
+        log.error(f"SQLite error while adding user '{name}' with ID '{user_id}': {e}")
+        return False
+
+
+def check_user_exists(user_id: str) -> bool:
+    """Checks if a user exists in the database.
+
+    Args:
+        user_id (str): The ID of the user to check.
+
+    Returns:
+        bool: True if the user exists, False otherwise.
+    """
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+            result = cur.fetchone()
+            if result:
+                log.info(f"User '{user_id}' exists in the database.")
+                return True
+            else:
+                log.warning(f"User '{user_id}' does not exist in the database.")
+                return False
+    except sqlite3.Error as e:
+        log.error(f"SQLite error while checking user '{user_id}': {e}")
+        return False
+
+
+def authenticate_user(user_id: str, password: str) -> tuple[bool, str]:
+    """Authenticates a user by checking their ID and password hash.
+    + If the user exists and the password matches, it updates the last login time.
+
+    Args:
+        user_id (str): The ID of the user to authenticate.
+        password (str): The raw password of the user.
+
+    Returns:
+        tuple (bool, str):
+            + bool: True if the authentication is successful, False otherwise.
+            + str: A message indicating the error or The user-name if authentication is successful.
+    """
+    try:
+        with get_connection() as conn:
+            # Fetch the hashed password from the database
+            cur = conn.cursor()
+            cur.execute("SELECT password_hash, name FROM users WHERE user_id = ?", (user_id,))
+            result = cur.fetchone()
+
+            if result:
+                hashed_password = result[0].encode('utf-8')
+
+                # Check if the provided password matches the hashed password
+                if bcrypt.checkpw(password.encode('utf-8'), hashed_password):
+                    log.info(f"User '{user_id}' authenticated successfully.")
+                    # Update last login time
+                    ist_time = datetime.now(IST).strftime("%Y-%m-%d %H:%M:%S")
+
+                    cur.execute("""
+                        UPDATE users SET last_login = ?
+                        WHERE user_id = ?
+                    """, (ist_time, user_id))
+                    conn.commit()
+                    log.info(f"Authentication successful for '{user_id}' @ {ist_time}")
+                    return True, result[1]  # Return True and the user's name
+
+                else:
+                    log.warning(f"Authentication failed for user '{user_id}': Incorrect password.")
+                    return False, "Incorrect password."
+
+            else:
+                log.warning(f"Authentication failed for user '{user_id}': User does not exist.")
+                return False, "User does not exist."
+
+    except sqlite3.Error as e:
+        log.error(f"SQLite error while authenticating user '{user_id}': {e}")
+        return False, "Database error during authentication."
+
+
+# ------------------------------------------------------------------------------
+# File Management Functions:
+# ------------------------------------------------------------------------------
 
 def add_file(user_id: str, filename: str) -> int:
     """Adds a file upload record to the database.
@@ -103,33 +244,6 @@ def add_file(user_id: str, filename: str) -> int:
     except sqlite3.Error as e:
         log.error(f"SQLite error while adding file '{filename}' for user '{user_id}': {e}")
         return -1
-
-
-def add_embedding(file_id: int, vector_id: str) -> bool:
-    """Adds an embedding record for a file in the database.
-
-    Args:
-        file_id (int): The ID of the file to which the embedding belongs.
-        vector_id (str): The ID of the embedding vector.
-
-    Returns:
-        bool: True if the embedding was added successfully, False otherwise.
-    """
-
-    try:
-        with get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO embeddings (file_id, vector_id) VALUES (?, ?)",
-                (file_id, vector_id,)
-            )
-            conn.commit()
-            log.info(f"Embedding added for file ID {file_id} with vector ID '{vector_id}'")
-            return True
-
-    except sqlite3.Error as e:
-        log.error(f"SQLite error while adding embedding for file ID {file_id}: {e}")
-        return False
 
 
 def get_user_files(user_id: str) -> List[str]:
@@ -282,6 +396,37 @@ def mark_file_removed(user_id: str, file_id: int) -> bool:
         return False
 
 
+# ------------------------------------------------------------------------------
+# Embedding Management Functions:
+# ------------------------------------------------------------------------------
+
+def add_embedding(file_id: int, vector_id: str) -> bool:
+    """Adds an embedding record for a file in the database.
+
+    Args:
+        file_id (int): The ID of the file to which the embedding belongs.
+        vector_id (str): The ID of the embedding vector.
+
+    Returns:
+        bool: True if the embedding was added successfully, False otherwise.
+    """
+
+    try:
+        with get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO embeddings (file_id, vector_id) VALUES (?, ?)",
+                (file_id, vector_id,)
+            )
+            conn.commit()
+            log.info(f"Embedding added for file ID {file_id} with vector ID '{vector_id}'")
+            return True
+
+    except sqlite3.Error as e:
+        log.error(f"SQLite error while adding embedding for file ID {file_id}: {e}")
+        return False
+
+
 def mark_embeddings_removed(vector_ids: List[str]) -> bool:
     """Marks an embedding as unavailable (deleted) in the database.
 
@@ -315,6 +460,10 @@ def mark_embeddings_removed(vector_ids: List[str]) -> bool:
         log.error(f"SQLite error while marking embeddings as removed: {e}")
         return False
 
+
+# ------------------------------------------------------------------------------
+# Main Execution Block for Testing:
+# ------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     # Clear the database and reCreate:
@@ -377,9 +526,15 @@ if __name__ == "__main__":
     assert emb == [], "Embeddings not deleted after file removal for user 2"
     print("\t - Embeddings deleted after file removal for user 2")
 
-    print("\nAll tests passed successfully!")
+    # Check USERs management:
+    print("\nChecking user management:")
+    assert add_user("abc", "a b c", "pass") == True, "User addition failed"
+    assert check_user_exists("abc") == True, "User existence check failed"
+    assert authenticate_user("abc", "pass") == (True, 'a b c'), "User authentication failed"
+    print("\t - User management checks passed successfully.")
 
     # Cleanup:
+    print("\nAll tests passed successfully!")
     print("\t - Cleaning up the database...")
     delete_database()
     print("\t - Database cleaned up.")

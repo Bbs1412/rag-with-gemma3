@@ -43,27 +43,95 @@ class Message:
 
 # Get user_id:
 if "session_id" not in st.session_state:
-    with st.popover("Pick or Enter User Name", use_container_width=False):
-        names = ["nervous_nerd", "curious_cat", "bold_bear", "witty_wolf"]
+    # with st.container(border=True, height=500):
+    with st.container(border=True):
+        tabs = st.tabs(tabs=['Register', 'Login'])
 
-        name_options = st.columns(len(names)//2, gap='small', vertical_alignment='center')
-        name_options_2 = st.columns(len(names) - len(name_options),
-                                    gap='small', vertical_alignment='center')
+        with tabs[1]:
+            st.header("🔐 :orange[Existing User Login]")
+            ip_user_id = st.text_input(
+                "User ID:", placeholder="Enter your user ID here...",
+                icon="👤", key="login_user_id"
+            )
+            ip_user_pw = st.text_input(
+                "Password:", placeholder="Enter your password here...",
+                type="password", icon="🔑", key="login_user_pw"
+            )
 
-        for i, name in enumerate(names[:len(names)//2]):
-            if name_options[i].button(name, key=f"user_name_{i}"):
-                st.session_state.session_id = name
+            if st.button("Login", type="primary"):
+                ip_user_id = "_".join(ip_user_id.strip().lower().split(" "))
+                ip_user_pw = ip_user_pw.strip()
 
-        for i, name in enumerate(names[len(names)//2:]):
-            if name_options_2[i].button(name, key=f"user_name_{i + len(names)//2}"):
-                st.session_state.session_id = name
+                if not ip_user_id or not ip_user_pw:
+                    st.error("Please fill all the fields.", icon="🚫")
+                else:
+                    # Send to server for login:
+                    try:
+                        resp = requests.post(
+                            f"{st.secrets.server.ip_address}/login",
+                            json={"login_id": ip_user_id, "password": ip_user_pw}
+                        )
 
-        uip = st.text_input("Type", placeholder="Or, enter your own user ID:",
-                            value=st.session_state.get("session_id", ""))
-        if st.button("Set User ID", type="primary"):
-            uip = "_".join(uip.strip().lower().split(" "))
-            st.session_state.session_id = uip
-            st.rerun()
+                        if resp.status_code == 200:
+                            session_id = resp.json().get("user_id")
+                            st.session_state.session_id = session_id
+                            name_of_user = resp.json().get("name", session_id)
+                            st.session_state.name_of_user = name_of_user
+
+                            st.success("Login successful!", icon="✅")
+                            st.rerun()
+                        else:
+                            st.error(resp.json().get("error", "Login failed."), icon="🚫")
+                            st.stop()
+
+                    except requests.RequestException as e:
+                        st.error(f"Error connecting to server: {e}", icon="🚫")
+                        st.stop()
+
+        with tabs[0]:
+            st.header("🔐 :orange[New User Registration]")
+            ip_user_id = st.text_input(
+                "User ID:", placeholder="Enter your user ID here...",
+                icon="👤", key="register_user_id"
+            )
+            ip_user_name = st.text_input(
+                "Your Name:", placeholder="Enter your name here...",
+                icon="🔤", key="register_user_name"
+            )
+            st.caption("Use characters only from `lower case letters`, `numbers`, `-`, `_`")
+            ip_user_pw = st.text_input(
+                "Password:", placeholder="Enter your password here...",
+                type="password", icon="🔑", key="register_user_pw"
+            )
+
+            if st.button("Register", type="primary"):
+                ip_user_id = "_".join(ip_user_id.strip().lower().split(" "))
+                ip_user_pw = ip_user_pw.strip()
+
+                if not ip_user_name or not ip_user_id or not ip_user_pw:
+                    st.error("Please fill all the fields.", icon="🚫")
+                else:
+                    # Send to server for registration:
+                    try:
+                        resp = requests.post(
+                            f"{st.secrets.server.ip_address}/register",
+                            json={
+                                "name": ip_user_name, "user_id": ip_user_id, "password": ip_user_pw
+                            }
+                        )
+
+                        if resp.status_code == 201:
+                            st.session_state.session_id = ip_user_id
+                            st.success("Registration successful! You can now login.", icon="✅")
+                            st.stop()
+                        else:
+                            st.error(resp.json().get("error", "Registration failed."), icon="🚫")
+                            st.stop()
+
+                    except requests.RequestException as e:
+                        st.error(f"Error connecting to server: {e}", icon="🚫")
+                        st.stop()
+
     st.stop()
 
 
@@ -77,30 +145,24 @@ if "initialized" not in st.session_state:
     st.session_state.server_ip = st.secrets.server.ip_address
     try:
         resp = requests.post(
-            f"{st.session_state.server_ip}/login",
-            # json={"login_id": "bot_user", "password": "dummy"}
-            json={"login_id": st.session_state.session_id, "password": "dummy"}
+            f"{st.session_state.server_ip}/chat_history",
+            data={"user_id": st.session_state.session_id}
         )
         if resp.status_code == 200:
-            session_id = resp.json().get("user_id")
-            st.session_state.session_id = session_id
-            # log.info(f"Server session initialized successfully. Session ID: {session_id}")
-
             # Initialize messages:
             st.session_state.chat_history = [Message('assistant', "👋, How may I help you today?")]
 
             # Load old chat history (if):
             chat_hist = resp.json().get("chat_history", [])
             for msg in chat_hist:
-                if msg['type'] == 'human':
-                    st.session_state.chat_history.append(Message('human', msg['content']))
-                elif msg['type'] == 'ai':
-                    st.session_state.chat_history.append(Message('assistant', msg['content']))
-
+                st.session_state.chat_history.append(Message(msg['role'], msg['content']))
         else:
-            st.session_state.session_id = None
-            # log.error(f"Failed to initialize server session: {resp.text}")
-            raise Exception("Server did not respond as expected.")
+            # log.error(f"Failed to initialize chat history: {resp.json().get('error', 'Unknown error')}")
+            st.error(
+                "Failed to initialize chat history. Please try again later.",
+                icon="🚫"
+            )
+            st.stop()
 
     except requests.RequestException as e:
         # log.error(f"Error initializing server session: {e}")
@@ -315,7 +377,8 @@ with st.sidebar.container(border=True):
     c1, c2 = st.columns([1, 8])
     # c1.image("./assets/user.png", use_container_width=True)
     c1.write("👤")
-    c2.write(" ".join([word.capitalize() for word in user_id.split("_")]))
+    # c2.write(" ".join([word.capitalize() for word in user_id.split("_")]))
+    c2.write(st.session_state.get("name_of_user", "Error Occurred!"))
 # st.sidebar.divider()
 
 
@@ -372,7 +435,6 @@ if st.sidebar.button("Clear My Chat History", type="secondary", icon="💬"):
         ]
         st.session_state.last_retrieved_docs = []
         st.success("Chat history cleared successfully!", icon="✅")
-        st.rerun()
     else:
         st.error(resp.json().get("error", "Failed to clear chat history."), icon="🚫")
 
