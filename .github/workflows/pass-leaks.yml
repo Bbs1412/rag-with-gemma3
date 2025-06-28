@@ -1,4 +1,4 @@
-name: Secret Scan with Gitleaks
+name: Secret Scan with Gitleaks v2
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   gitleaks-scan:
-    name: Scan for Hardcoded Secrets 🔍
+    name: Scan for Hardcoded Secrets for preventing leaks
     runs-on: ubuntu-latest
 
     steps:
