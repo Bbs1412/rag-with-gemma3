@@ -640,8 +640,12 @@ async def rag(request: Request, chat_request: RagChatRequest):
                                 break
 
                             # Hide user_id from metadata on UI
-                            # if "user_id" in document.metadata:
-                            #     document.metadata.pop("user_id")
+                            if "user_id" in document.metadata:
+                                if document.metadata["user_id"] == "public":
+                                    document.metadata["isPublicDocument"] = True
+                                else:
+                                    document.metadata["isPublicDocument"] = False
+                                document.metadata.pop("user_id")
 
                             yield json.dumps({
                                 "type": "context",

@@ -7,6 +7,7 @@ Planning to add more file types in the future.
 - `python -m llm_system.utils.loader`
 """
 
+import os
 from typing import List
 from langchain_core.documents import Document
 from langchain_community.document_loaders import TextLoader, PyMuPDFLoader
@@ -55,16 +56,18 @@ def load_file(user_id: str, file_path: str) -> tuple[bool, List[Document], str]:
         # Since i am exposing the retrieved docs to UI
         # Hide full server file path if its there:
         if 'file_path' in doc.metadata:
-            doc.metadata['file_path'] = doc.metadata['file_path'].split('/')[-1]
-        
+            # doc.metadata['file_path'] = doc.metadata['file_path'].split('/')[-1]
+            doc.metadata['file_path'] = os.path.basename(doc.metadata['file_path'])
+
         if 'source' in doc.metadata:
             # If it is not local file, keep source as is:
             if "www." in doc.metadata['source'] or "http" in doc.metadata['source']:
                 continue
             # If it is local file, keep only the file name:
             else:
-                if '/' in doc.metadata['source']:
-                    doc.metadata['source'] = doc.metadata['source'].split('/')[-1]
+                # if '/' in doc.metadata['source']:
+                #     doc.metadata['source'] = doc.metadata['source'].split('/')[-1]
+                doc.metadata['source'] = os.path.basename(doc.metadata['source'])
 
     if not file_content:
         log.error(f"No content found in the file: {file_path}")
