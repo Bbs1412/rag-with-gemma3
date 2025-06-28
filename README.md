@@ -4,9 +4,9 @@ emoji: 🌖
 colorFrom: indigo
 colorTo: pink
 sdk: docker
-pinned: false
+pinned: true
 license: gpl-3.0
-short_description: End-to-end system with Streamlit frontend and FastAPI backend for document-based RAG with Gemma-3 & Ollama.
+short_description: End-to-end RAG System with Gemma-3.
 ---
 
 # `RAG with Gemma-3`
@@ -45,7 +45,7 @@ Check out the live project deployment: [![HuggingFace Space Deployment Link](htt
 
 # 🎯 Project Details:
 ## Aim
-The core objective of this project is to build a **robust RAG system** with modern components and clean modular design.
+The core objective of this project is to build a **robust RAG system** with modern components and clean modular design and proper error handling.
 
 ## Methodology
 1. Make a responsive UI in `Streamlit` allowing user to upload documents, get previews to ensure correctness and interact with them.
@@ -60,16 +60,32 @@ The core objective of this project is to build a **robust RAG system** with mode
 > [!Note]  
 > Due to hosting limitations of Gemma3, the Hugging Face Space deployment uses `Google Gemini-2.0-Flash-Lite` as the LLM backend.
 
+
+## RAG Samples:
+
+- Q: Highest possible grade:
+    [![RAG Sample Q1](./Docs/5_Doc_Retr_Que.png)](./Docs/5_Doc_Retr_Que.png)
+    [![RAG Sample A1](./Docs/5_Doc_Retr_Ans.png)](./Docs/5_Doc_Retr_Ans.png)
+- Q: Formatted Output:
+    [![RAG Sample Q2](./Docs/2.3_Sample_Ans.png)](./Docs/2.3_Sample_Ans.png)
+
 ## Features
 
 - User Authentication:
     + Authenticate users using `SQLite-3` database and `bcrypt` based password hashing and salt.
+        [![User Registration Screenshot](./Docs/1_Auth.png)](./Docs/1_Auth.png)
     + Store user data securely and also auto clear stale sessions data.
 
-- Data Management:
-    + Allow user to **upload documents** (pdf, txt, md) and interact with them using natural language queries.
+- UI and User Controls:
+    + Build a responsive UI using `Streamlit` app. Provide a chat interface for users to ask questions about their documents, get file previews and receive context-aware responses.
+        [![User File Preview](./Docs/2.2_Preview.png)](./Docs/2.2_Preview.png)
     + User uploaded files and corresponding data are tracked in a **SQLite-3** database.
-    + User can **view and delete** their uploaded documents from the UI, ensuring full control over their data.
+    + Allow users to delete their uploaded documents, and manage their session history.
+        [![User Chat Screenshot](./Docs/3_Clear_Chat_Hist.png)](./Docs/3_Clear_Chat_Hist.png)
+    + Note: Files previews are cached for 10 minutes, so even after deletion, the file preview might be available for that duration. 
+    + Also works with FastAPI SSE to show real-time responses from the LLM and retrieved documents and metadata for verification.
+        [![Source Documents Screenshot](./Docs/7_Metadata_n_Src.png)](./Docs/7_Metadata_n_Src.png)
+
 
 - User wise document management:
     + Support **multi-file embeddings** per user, allowing users to upload multiple documents and retrieve relevant information based on their queries.
@@ -84,8 +100,11 @@ The core objective of this project is to build a **robust RAG system** with mode
 - FastAPI Backend:
     + Build a **FastAPI** backend to handle file uploads, document processing, user authentication, and streaming LLM responses.
     + Integrate with 'LLM System' module to handle LLM tasks.
+    + Provide status updates to UI for long running tasks:
+        [![Step By Step Updates Screenshot](./Docs/5_Doc_Retr_Que.png)](./Docs/5_Doc_Retr_Que.png)
     + Implement **Server-Sent Events (`SSE`)** for real-time streaming of LLM responses to the frontend with ***NDJSON*** format for data transfer.
-    + Also provide UI with retrieved documents and metadata for verification of responses.
+        [![SSE Streaming Screenshot](./Docs/6_Streaming_Resp.png)](./Docs/6_Streaming_Resp.png)
+    + Provide UI with retrieved documents and metadata for verification of responses.
 
 - LLM System:
     + Modular `LLM System` using `LangChain` components for:
@@ -98,33 +117,27 @@ The core objective of this project is to build a **robust RAG system** with mode
         1. **Tracing**: Enable tracing of LLM interactions using `LangSmith` for debugging and monitoring LLM interactions.
         1. **Models**: Use `Ollama` to run the **Gemma-3** LLM and **mxbai embeddings** locally for inference, ensuring low latency and privacy.
 
-- UI and User Controls:
-    + Build a responsive UI using `Streamlit` to allow users to upload documents, get previews, and interact with them.
-    + Provide a chat interface for users to ask questions about their documents and receive context-aware responses.
-    + Allow users to view their uploaded documents, delete them, and manage their session history.
-    + Also works with FastAPI SSE to show real-time responses from the LLM and retrieved documents for verification.
-
 - Dockerization:
     + Create a dynamic `Docker` setup for easy deployment as either a development or deployment environment.
-    + Use `Dockerfile` to manage both FastAPI and Streamlit server in a single container (mainly due to Hugging Face Spaces limitations).
+    + Use [`Dockerfile`](./Dockerfile) to manage both [FastAPI](./server/server.py) and [Streamlit](./app.py) server in a single container (mainly due to Hugging Face Spaces limitations).
 
 
 # 🧑‍💻 Tech Stack
-- Streamlit
-- FastAPI
-- LangChain
-- LangSmith
-- Ollama
+- 🦜️ LangChain
+- ⚡ FastAPI
+- 👑 Streamlit
+- 🐋 Docker
+- 🦙 Ollama
     - Gemma-3
     - mxbai-embed-large
-- FAISS
-- SQLite-3
-- bcrypt
-- Docker
+- ♾️ FAISS
+- 🪶 SQLite-3
+- 🔨 LangSmith
+- 🔐 bcrypt
 
 
 # 🛠️ Installation
-There are two ways to run this project - either directly using a [**virtual environment**](#virtual-environment) or using [**Dockerfile**](#-docker).
+There are two ways to run this project - either directly using a [**Virtual Environment**](#virtual-environment) or using [**Dockerfile**](#-docker).
 
 ## Virtual Environment
 
@@ -269,7 +282,7 @@ Dockerfile is coded dynamically to support both development and deployment envir
     Get-ChildItem -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
     ```
 
-## Using Host Machine's Ollama on Linux:
+## Using Linux Host Machine's Ollama on container:
 - The Ollama server is configured to run on `http://host.docker.internal:11434` by default, which works out-of-the-box on Windows and macOS.
 - On Linux, Docker does not support ***host.docker.internal*** automatically.
 - To fix this, add the following flag in the docker create command:
@@ -286,8 +299,9 @@ Dockerfile is coded dynamically to support both development and deployment envir
     + There are two diff models saved in config, but, I have used same model for response generation and summarization, if you want to change it, you can update the summarization model in `server.py` (≈ line 63)
 
 - To change inference device:
-    + I have configured the embedding model to work on CPU, if you want to use GPU for that too, you can change the **num_gpu** parameter in [`./server/llm_system/core/database.py`](./server/llm_system/core/database.py) (≈ line 58).
-    + 0 means 100% CPU, -1 means 100% GPU, and any other number specifies particular number of model's layers to be loaded on GPU. 
+    + I have configured the LLM model to work on GPU and embedding model to work on CPU. 
+    - If you want to use GPU for embeddings too, you can change the **num_gpu** parameter in [`./server/llm_system/core/database.py`](./server/llm_system/core/database.py) (≈ line 58).
+    + 0 means 100% CPU, -1 means 100% GPU, and any other number specifies particular number of model's layers to be offloaded on GPU. 
     + Delete this parameter if you are unsure of these values and your hardware capabilities. Ollama dynamically offloads layers to GPU based on available resources.
 
 > [!Note]  
@@ -296,6 +310,7 @@ Dockerfile is coded dynamically to support both development and deployment envir
 
 # 🚀 Future Work
 - Add support for more file formats like DOCX, PPTX, etc.
+- Add web based loading so that any website can be loaded and queried on the go.
 - Create docker-compose setup for easier management of multiple containers.
 
 
