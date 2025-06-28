@@ -1,21 +1,42 @@
-name: Auto Sync to Hugging Face hub
+name: Deploy Clean Version to Hugging Face Spaces
+
 on:
   push:
     branches: [main]
-
-  # to run this workflow manually from the Actions tab
   workflow_dispatch:
 
 jobs:
-  sync-to-hub:
+  deploy-to-hf:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout main branch
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          lfs: true
 
-      - name: Push to hub
+      - name: Set up Git config
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Create clean HF_deploy branch
+        run: |
+          git checkout --orphan HF_deploy
+          git rm -rf .
+
+          # Restore only necessary files for Hugging Face deployment
+          git checkout main -- .streamlit/ assets/ docker/ server/ .gitattributes .gitignore HF_README.md app.py Dockerfile entrypoint.sh requirements.txt LICENSE
+
+          # Replace HF_README.md as README.md (overwrite)
+          mv HF_README.md README.md
+
+          git add -A
+          git commit -m "Deploy: Cleaned up for HF push with metadata README"
+
+      - name: Push GitHub:HF_deploy to HF_Spaces:main
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: git push --force https://bhushan-songire:$HF_TOKEN@huggingface.co/spaces/bhushan-songire/rag-with-gemma3 main
+        run: |
+          git remote add hf https://bhushan-songire:${HF_TOKEN}@huggingface.co/spaces/bhushan-songire/rag-with-gemma3
+          git push -f hf HF_deploy:main

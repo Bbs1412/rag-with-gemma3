@@ -1,14 +1,3 @@
----
-title: Rag With Gemma-3
-emoji: 🌖
-colorFrom: indigo
-colorTo: pink
-sdk: docker
-pinned: true
-license: gpl-3.0
-short_description: End-to-end RAG System with Gemma-3.
----
-
 # `RAG with Gemma-3`
 
 This project is a **modular Retrieval-Augmented Generation (RAG) system** built with Google DeepMind's - **Gemma 3** served locally using Ollama. It allows users to upload documents (PDF, TXT, Markdown etc.), and then chat with the content using natural language queries - all processed through a local setup for privacy and full control.
@@ -16,7 +5,7 @@ This project is a **modular Retrieval-Augmented Generation (RAG) system** built 
 Designed with modularity and performance in mind, the system handles end-to-end workflows including file ingestion, vector embedding, history summarization, document retrieval, context-aware response generation, and streaming replies to a frontend. It supports multi-file embeddings per user, persistent session history and document storage, and offers live document previews - making it complete end-to-end RAG pipeline useful for educational, or personal assistants.
 
 <!-- Check out the project deployment on [Hugging Face Spaces](https://huggingface.co/spaces/bhushan-songire/rag-with-gemma3) for a live demo. -->
-Check out the live project deployment: [![HuggingFace Space Deployment Link](https://img.shields.io/badge/bhushan--songire/-rag--with--gemma3-ff8800.svg?logo=huggingface)](https://github.com/Bbs1412/DistributedAttendanceSystem)
+Check out the live project deployment: [![HuggingFace Space Deployment Link](https://img.shields.io/badge/bhushan--songire/-rag--with--gemma3-ff8800.svg?logo=huggingface)](https://huggingface.co/spaces/bhushan-songire/rag-with-gemma3)
 
 
 
@@ -132,7 +121,7 @@ The core objective of this project is to build a **robust RAG system** with mode
     - mxbai-embed-large
 - ♾️ FAISS
 - 🪶 SQLite-3
-- 🔨 LangSmith
+- 🛠️ LangSmith
 - 🔐 bcrypt
 
 
