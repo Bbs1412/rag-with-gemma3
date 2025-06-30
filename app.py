@@ -427,6 +427,7 @@ if st.sidebar.button("Clear My Uploads", type="secondary", icon="🗑️"):
         )
         if resp.status_code == 200:
             st.success(resp.json().get("message", "Uploads cleared successfully!"), icon="✅")
+            st.cache_data.clear()
         else:
             st.error(resp.json().get("error", "Failed to clear Uploads."), icon="🚫")
     except requests.RequestException as e:
