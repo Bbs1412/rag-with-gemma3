@@ -124,6 +124,14 @@ The core objective of this project is to build a **robust RAG system** with mode
 - 🛠️ LangSmith
 - 🔐 bcrypt
 
+Others:
+- 🤗 **Hugging Face Spaces**: 
+    + Deploy the project in a Docker container using Dockerfile.
+- :octocat: **GitHub actions and Branch Protection**: 
+    + Process the repository for auto deployment to Hugging Face Spaces.
+    + Check for any secret leaks in code.
+    + Fail the commit on any secret leaks.
+
 
 # 🛠️ Installation
 There are two ways to run this project - either directly using a [**Virtual Environment**](#virtual-environment) or using [**Dockerfile**](#-docker).
