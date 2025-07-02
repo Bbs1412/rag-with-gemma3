@@ -74,7 +74,8 @@ The core objective of this project is to build a **robust RAG system** with mode
     + Note: Files previews are cached for 10 minutes, so even after deletion, the file preview might be available for that duration. 
     + Also works with FastAPI SSE to show real-time responses from the LLM and retrieved documents and metadata for verification.
         [![Source Documents Screenshot](./Docs/7_Metadata_n_Src.png)](./Docs/7_Metadata_n_Src.png)
-
+    + UI supports **thinking models** also to show the LLM's thought process while generating responses.
+        [![Thinking Model Screenshot](./Docs/8_Thinking_Support.png)](./Docs/8_Thinking_Support.png)
 
 - User wise document management:
     + Support **multi-file embeddings** per user, allowing users to upload multiple documents and retrieve relevant information based on their queries.
@@ -269,14 +270,28 @@ Dockerfile is coded dynamically to support both development and deployment envir
         # Other flags...
     ```
 
-## Removing all the cache files:
-- Linux:
+## `Reset` Project:
+1. Remove all cache files:
+    - Linux/Mac:
+        ```bash
+        find . -type d -name "__pycache__" -exec rm -r {} +
+        ```
+    - Windows:
+        ```powershell
+        Get-ChildItem -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+        ```
+
+1. Clear the SQLite database:
     ```bash
-    find . -type d -name "__pycache__" -exec rm -r {} +
+    python sq_db.py
     ```
-- Windows:
-    ```powershell
-    Get-ChildItem -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+
+1. Clear all user data:
+    ```bash
+    # Delete all database indices:
+    rm -rf ./user_faiss/
+    # Delete all user data:
+    rm -rf ./user_data/
     ```
 
 ## Using Linux Host Machine's Ollama on container:
@@ -286,7 +301,6 @@ Dockerfile is coded dynamically to support both development and deployment envir
     ```bash
     --add-host=host.docker.internal:host-gateway
     ```
-
 
 ## Ollama Models:
 - To change LLM or Embedding model:
@@ -303,6 +317,13 @@ Dockerfile is coded dynamically to support both development and deployment envir
 
 > [!Note]  
 > If you are using docker, make sure to do these changes in [`./docker/dev_*`](./docker/) files.
+
+## To test some sub-components:
+- This ensures that relative imports work correctly in the project. 
+    ```bash
+    cd server
+    python -m llm_system.utils.loader
+    ```
 
 
 # 🚀 Future Work
